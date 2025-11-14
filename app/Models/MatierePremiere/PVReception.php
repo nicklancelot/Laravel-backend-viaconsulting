@@ -18,7 +18,7 @@ class PVReception extends Model
         'dette_fournisseur',
         'utilisateur_id',
         'fournisseur_id',
-        'localisation_id',
+        'provenance_id',
         'poids_brut',
         'type_emballage',
         'poids_emballage',
@@ -85,10 +85,11 @@ class PVReception extends Model
         return $this->belongsTo(\App\Models\MatierePremiere\Fournisseur::class);
     }
 
-    public function localisation(): BelongsTo
+     public function provenance(): BelongsTo 
     {
-        return $this->belongsTo(\App\Models\Localisation::class);
+        return $this->belongsTo(\App\Models\Provenances::class);
     }
+
 
     // Scopes
     public function scopeFeuilles($query)

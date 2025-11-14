@@ -13,7 +13,7 @@ class FacturationController extends Controller
     public function index()
     {
         try {
-            $facturations = Facturation::with(['pvReception.fournisseur', 'pvReception.localisation'])->get();
+            $facturations = Facturation::with(['pvReception.fournisseur', 'pvReception.provenance'])->get();
             return response()->json([
                 'status' => 'success',
                 'data' => $facturations
@@ -82,7 +82,7 @@ public function store(Request $request)
         return response()->json([
             'status' => 'success',
             'message' => 'Facturation créée avec succès',
-            'data' => $facturation->load(['pvReception.fournisseur', 'pvReception.localisation'])
+            'data' => $facturation->load(['pvReception.fournisseur', 'pvReception.provenance'])
         ], 201);
 
     } catch (\Exception $e) {
@@ -96,7 +96,7 @@ public function store(Request $request)
     public function show($id)
     {
         try {
-            $facturation = Facturation::with(['pvReception.fournisseur', 'pvReception.localisation'])->find($id);
+            $facturation = Facturation::with(['pvReception.fournisseur', 'pvReception.provenance'])->find($id);
             
             if (!$facturation) {
                 return response()->json([
@@ -151,7 +151,7 @@ public function store(Request $request)
             return response()->json([
                 'status' => 'success',
                 'message' => 'Facturation modifiée avec succès',
-                'data' => $facturation->load(['pvReception.fournisseur', 'pvReception.localisation'])
+                'data' => $facturation->load(['pvReception.fournisseur', 'pvReception.provenance'])
             ], 200);
 
         } catch (\Exception $e) {
@@ -200,7 +200,7 @@ public function store(Request $request)
             return response()->json([
                 'status' => 'success',
                 'message' => 'Paiement enregistré avec succès',
-                'data' => $facturation->load(['pvReception.fournisseur', 'pvReception.localisation'])
+                'data' => $facturation->load(['pvReception.fournisseur', 'pvReception.provenance'])
             ], 200);
 
         } catch (\Exception $e) {

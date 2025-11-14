@@ -12,7 +12,7 @@ class ImpayeController extends Controller
     public function index()
     {
         try {
-            $impayes = Impaye::with(['pvReception.fournisseur', 'pvReception.localisation'])->get();
+            $impayes = Impaye::with(['pvReception.fournisseur', 'pvReception.provenance'])->get();
             return response()->json([
                 'status' => 'success',
                 'data' => $impayes
@@ -74,7 +74,7 @@ class ImpayeController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Impayé créé avec succès',
-                'data' => $impaye->load(['pvReception.fournisseur', 'pvReception.localisation'])
+                'data' => $impaye->load(['pvReception.fournisseur', 'pvReception.provenance'])
             ], 201);
 
         } catch (\Exception $e) {
@@ -90,7 +90,7 @@ class ImpayeController extends Controller
     public function show($id)
     {
         try {
-            $impaye = Impaye::with(['pvReception.fournisseur', 'pvReception.localisation'])->find($id);
+            $impaye = Impaye::with(['pvReception.fournisseur', 'pvReception.provenance'])->find($id);
             
             if (!$impaye) {
                 return response()->json([
@@ -148,7 +148,7 @@ class ImpayeController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Impayé modifié avec succès',
-                'data' => $impaye->load(['pvReception.fournisseur', 'pvReception.localisation'])
+                'data' => $impaye->load(['pvReception.fournisseur', 'pvReception.provenance'])
             ], 200);
 
         } catch (\Exception $e) {
@@ -213,7 +213,7 @@ class ImpayeController extends Controller
             // ✅ Suppression du bloc manuel de mise à jour de pvReception : le hook updated s'en charge automatiquement
 
             // Recharger l'impayé avec les relations (attributs déjà à jour via save())
-            $impaye->load(['pvReception.fournisseur', 'pvReception.localisation']);
+            $impaye->load(['pvReception.fournisseur', 'pvReception.provenance']);
 
          
 

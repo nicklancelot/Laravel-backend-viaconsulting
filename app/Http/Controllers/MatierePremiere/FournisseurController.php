@@ -18,7 +18,7 @@ class FournisseurController extends Controller
             $user = Auth::user();
             
             $fournisseurs = Fournisseur::with(['localisation', 'utilisateur'])
-                ->forUser($user) // Applique le filtre selon le rôle
+                ->forUser($user) 
                 ->orderBy('created_at', 'desc')
                 ->get();
             

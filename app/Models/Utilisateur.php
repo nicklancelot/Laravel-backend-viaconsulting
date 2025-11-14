@@ -31,4 +31,5 @@ class Utilisateur extends Authenticatable
     {
         return $this->belongsTo(Localisation::class);
     }
+
 }

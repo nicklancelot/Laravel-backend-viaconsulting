@@ -103,7 +103,7 @@ class FicheLivraisonController extends Controller
             }
 
             // Charger les relations pour la réponse
-            $ficheLivraison->load(['pvReception.fournisseur', 'pvReception.localisation']);
+            $ficheLivraison->load(['pvReception.fournisseur', 'pvReception.provenance']);
 
             $message = 'Fiche de livraison créée avec succès';
             if ($estPartielle) {
@@ -206,7 +206,7 @@ class FicheLivraisonController extends Controller
                 DB::commit();
 
                 // Recharger les relations pour la réponse
-                $ficheLivraison->load(['pvReception.fournisseur', 'pvReception.localisation', 'livraison']);
+                $ficheLivraison->load(['pvReception.fournisseur', 'pvReception.provenance', 'livraison']);
                 $pvReception->refresh();
 
                 // Préparer le message de succès
@@ -323,7 +323,7 @@ class FicheLivraisonController extends Controller
                 DB::commit();
 
                 // Recharger les relations
-                $ficheLivraison->load(['pvReception.fournisseur', 'pvReception.localisation', 'livraison']);
+                $ficheLivraison->load(['pvReception.fournisseur', 'pvReception.provenance', 'livraison']);
 
                 return response()->json([
                     'status' => 'success',

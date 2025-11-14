@@ -7,16 +7,19 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
-        Schema::create('localisations', function (Blueprint $table) {
+        Schema::create('provenances', function (Blueprint $table) {
             $table->id();
             $table->string("Nom", '50');
             $table->timestamps();
         });
 
-        // Insertion des données initiales
-        $localisations = [
+        
+        $provenances = [
             ['Nom' => 'Manakara'],
             ['Nom' => 'Vangaindrano'],
             ['Nom' => 'Manambondro'],
@@ -25,12 +28,14 @@ return new class extends Migration
          
         ];
 
-        DB::table('localisations')->insert($localisations);
+        DB::table('provenances')->insert($provenances);
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
-        Schema::dropIfExists('localisations');
+        Schema::dropIfExists('provenances');
     }
 };
-

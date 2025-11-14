@@ -15,10 +15,10 @@ return new class extends Migration
             $table->enum('type', ['FG', 'CG', 'GG']);
             $table->string('numero_doc')->unique();
             $table->dateTime('date_reception');
-            $table->decimal('dette_fournisseur', 12, 2)->default(0); // CORRIGÉ: dette_fournisseur au lieu de date_fournisseur
+            $table->decimal('dette_fournisseur', 12, 2)->default(0); 
             $table->foreignId('utilisateur_id')->constrained('utilisateurs')->onDelete('cascade');
             $table->foreignId('fournisseur_id')->constrained('fournisseurs')->onDelete('cascade');
-            $table->foreignId('localisation_id')->constrained('localisations')->onDelete('cascade');
+            $table->foreignId('provenance_id')->constrained('provenances')->onDelete('cascade'); 
             
             // Données de poids et emballage
             $table->decimal('poids_brut', 10, 2); // en kg

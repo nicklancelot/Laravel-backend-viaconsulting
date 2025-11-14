@@ -23,14 +23,14 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // ✅ Insertion d’un compte administrateur par défaut
+        
         DB::table('utilisateurs')->insert([
             'nom' => 'Admin',
             'prenom' => 'Système',
             'numero' => '0331207216',
-            'localisation_id' => 1, // ⚠️ Doit exister dans la table localisations !
+            'localisation_id' => 1, 
             'CIN' => '51201100394',
-            'password' => Hash::make('admin123'), // 🔒 mot de passe sécurisé
+            'password' => Hash::make('admin123'),
             'role' => 'admin',
             'created_at' => now(),
             'updated_at' => now(),

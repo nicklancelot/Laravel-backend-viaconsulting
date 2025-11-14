@@ -17,8 +17,8 @@ class PVReceptionController extends Controller
         try {
             $user = Auth::user();
             
-            $pvReceptions = PVReception::with(['utilisateur', 'fournisseur', 'localisation'])
-                ->forUser($user) // Applique le filtre selon le rôle
+            $pvReceptions = PVReception::with(['utilisateur', 'fournisseur', 'provenance']) // CHANGÉ: 
+                ->forUser($user)
                 ->orderBy('created_at', 'desc')
                 ->get();
 
@@ -47,7 +47,7 @@ class PVReceptionController extends Controller
                 'dette_fournisseur' => 'required|numeric|min:0',
                 'utilisateur_id' => 'required|exists:utilisateurs,id',
                 'fournisseur_id' => 'required|exists:fournisseurs,id',
-                'localisation_id' => 'required|exists:localisations,id',
+                'provenance_id' => 'required|exists:provenances,id', // CHANGÉ: localisation_id → provenance_id
                 'poids_brut' => 'required|numeric|min:0',
                 'type_emballage' => 'required|in:sac,bidon,fut',
                 'poids_emballage' => 'required|numeric|min:0',
@@ -89,7 +89,7 @@ class PVReceptionController extends Controller
                 'dette_fournisseur' => $request->dette_fournisseur,
                 'utilisateur_id' => $request->utilisateur_id,
                 'fournisseur_id' => $request->fournisseur_id,
-                'localisation_id' => $request->localisation_id,
+                'provenance_id' => $request->provenance_id, // CHANGÉ: localisation_id → provenance_id
                 'poids_brut' => $request->poids_brut,
                 'type_emballage' => $request->type_emballage,
                 'poids_emballage' => $request->poids_emballage,
@@ -105,7 +105,7 @@ class PVReceptionController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'PV de réception créé avec succès',
-                'data' => $pvReception->load(['utilisateur', 'fournisseur', 'localisation'])
+                'data' => $pvReception->load(['utilisateur', 'fournisseur', 'provenance']) // CHANGÉ: localisation → provenance
             ], 201);
 
         } catch (ValidationException $e) {
@@ -140,7 +140,7 @@ class PVReceptionController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $pvReception->load(['utilisateur', 'fournisseur', 'localisation'])
+                'data' => $pvReception->load(['utilisateur', 'fournisseur', 'provenance']) // CHANGÉ: localisation → provenance
             ]);
         } catch (\Exception $e) {
             Log::error('Erreur lors de la récupération du PV de réception: ' . $e->getMessage());
@@ -203,7 +203,7 @@ class PVReceptionController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'PV de réception mis à jour avec succès',
-                'data' => $pvReception->load(['utilisateur', 'fournisseur', 'localisation'])
+                'data' => $pvReception->load(['utilisateur', 'fournisseur', 'provenance']) // CHANGÉ: localisation → provenance
             ]);
 
         } catch (ValidationException $e) {
@@ -259,9 +259,9 @@ class PVReceptionController extends Controller
         try {
             $user = Auth::user();
             
-            $pvReceptions = PVReception::with(['utilisateur', 'fournisseur', 'localisation'])
+            $pvReceptions = PVReception::with(['utilisateur', 'fournisseur', 'provenance']) // CHANGÉ: localisation → provenance
                 ->where('type', $type)
-                ->forUser($user) // Applique le filtre selon le rôle
+                ->forUser($user)
                 ->orderBy('created_at', 'desc')
                 ->get();
 
@@ -284,9 +284,9 @@ class PVReceptionController extends Controller
         try {
             $user = Auth::user();
             
-            $pvReceptions = PVReception::with(['utilisateur', 'fournisseur', 'localisation'])
+            $pvReceptions = PVReception::with(['utilisateur', 'fournisseur', 'provenance']) // CHANGÉ: localisation → provenance
                 ->where('statut', $statut)
-                ->forUser($user) // Applique le filtre selon le rôle
+                ->forUser($user)
                 ->orderBy('created_at', 'desc')
                 ->get();
 
