@@ -218,3 +218,4 @@ Route::middleware('auth:sanctum')->group(function () {
     // Route::get('/facturations/historique/all', [HEFacturationController::class, 'getHistoriqueFacturations']);
 
 
+// route commenter pour tester sans auth
