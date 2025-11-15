@@ -47,7 +47,7 @@ class PVReceptionController extends Controller
                 'dette_fournisseur' => 'required|numeric|min:0',
                 'utilisateur_id' => 'required|exists:utilisateurs,id',
                 'fournisseur_id' => 'required|exists:fournisseurs,id',
-                'provenance_id' => 'required|exists:provenances,id', // CHANGÉ: localisation_id → provenance_id
+                'provenance_id' => 'required|exists:provenances,id',
                 'poids_brut' => 'required|numeric|min:0',
                 'type_emballage' => 'required|in:sac,bidon,fut',
                 'poids_emballage' => 'required|numeric|min:0',

@@ -71,7 +71,12 @@ class PVReception extends Model
         $this->save();
     }
 
-
+    
+    public function facturation()
+    {
+        return $this->hasOne(Facturation::class);
+    }
+  
 
 
     // Relations
@@ -85,9 +90,9 @@ class PVReception extends Model
         return $this->belongsTo(\App\Models\MatierePremiere\Fournisseur::class);
     }
 
-     public function provenance(): BelongsTo 
+     public function provenance()
     {
-        return $this->belongsTo(\App\Models\Provenances::class);
+        return $this->belongsTo(\App\Models\Provenances::class, 'provenance_id');
     }
 
 

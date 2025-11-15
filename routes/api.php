@@ -56,11 +56,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/localisations/{localisation}', [LocalisationController::class, 'update']);
     // Route::delete('/localisations/{localisation}', [LocalisationController::class, 'destroy']);
 
-    // Route::get('/provenances', [ProvenancesController::class, 'index']);
-    // Route::post('/provenances', [ProvenancesController::class, 'store']);
-    // Route::get('/provenances/{provenance}', [ProvenancesController::class, 'show']);
-    // Route::put('/provenances/{provenance}', [ProvenancesController::class, 'update']);
-    // Route::delete('/provenances/{provenance}', [ProvenancesController::class, 'destroy']);
+
 
     // Utilisateurs - toutes les routes protégées
     Route::get('/utilisateurs', [UtilisateurController::class, 'index']);
@@ -140,82 +136,32 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/validations/{id}', [HEValidationController::class, 'destroy']);
     Route::get('/validations/fiche/{fiche_reception_id}', [HEValidationController::class, 'getByFicheReception']);
 
-    // Routes pour la facturation
-    Route::get('/facturations', [HEFacturationController::class, 'index']);
-    Route::post('/facturations', [HEFacturationController::class, 'store']);
-    Route::get('/facturations/{id}', [HEFacturationController::class, 'show']);
-    Route::put('/facturations/{id}', [HEFacturationController::class, 'update']);
-    Route::delete('/facturations/{id}', [HEFacturationController::class, 'destroy']);
-    Route::post('/facturations/{id}/paiement', [HEFacturationController::class, 'ajouterPaiement']);
-    Route::get('/facturations/statut/{statut}', [HEFacturationController::class, 'getByStatutPaiement']);
-    Route::get('/facturations/impayes', [HEFacturationController::class, 'getImpayes']);
+    // Routes pour la facturation Huile essentiel
+    Route::get('/he-facturations', [HEFacturationController::class, 'index']);
+    Route::post('/he-facturations', [HEFacturationController::class, 'store']);
+    Route::get('/he-facturations/{id}', [HEFacturationController::class, 'show']);
+    Route::put('/he-facturations/{id}', [HEFacturationController::class, 'update']);
+    Route::delete('/he-facturations/{id}', [HEFacturationController::class, 'destroy']);
+    Route::post('/he-facturations/{id}/paiement', [HEFacturationController::class, 'ajouterPaiement']);
+    Route::get('/he-facturations/statut/{statut}', [HEFacturationController::class, 'getByStatutPaiement']);
+    Route::get('/he-facturations/impayes', [HEFacturationController::class, 'getImpayes']);
 
     // Routes pour les fiches de livraison (CRUD complet)
-    Route::get('/fiche-livraisons', [HEFicheLivraisonController::class, 'index']);
-    Route::post('/fiche-livraisons', [HEFicheLivraisonController::class, 'store']);
-    Route::get('/fiche-livraisons/{id}', [HEFicheLivraisonController::class, 'show']);
-    Route::put('/fiche-livraisons/{id}', [HEFicheLivraisonController::class, 'update']);
-    Route::delete('/fiche-livraisons/{id}', [HEFicheLivraisonController::class, 'destroy']);
-    Route::get('/fiche-livraisons/fiche/{fiche_reception_id}', [HEFicheLivraisonController::class, 'getByFicheReception']);
+    Route::get('/he-fiche-livraisons', [HEFicheLivraisonController::class, 'index']);
+    Route::post('/he-fiche-livraisons', [HEFicheLivraisonController::class, 'store']);
+    Route::get('/he-fiche-livraisons/{id}', [HEFicheLivraisonController::class, 'show']);
+    Route::put('/he-fiche-livraisons/{id}', [HEFicheLivraisonController::class, 'update']);
+    Route::delete('/he-fiche-livraisons/{id}', [HEFicheLivraisonController::class, 'destroy']);
+    Route::get('/he-fiche-livraisons/fiche/{fiche_reception_id}', [HEFicheLivraisonController::class, 'getByFicheReception']);
 
     // Routes pour la gestion des livraisons
-    Route::post('/livraisons/{fiche_reception_id}/demarrer', [HELivraisonController::class, 'demarrerLivraison']);
-    Route::post('/livraisons/{fiche_reception_id}/terminer', [HELivraisonController::class, 'terminerLivraison']);
-    Route::get('/livraisons/en-attente', [HELivraisonController::class, 'getEnAttenteLivraison']);
-    Route::get('/livraisons/en-cours', [HELivraisonController::class, 'getEnCoursLivraison']);
-    Route::get('/livraisons/livrees', [HELivraisonController::class, 'getLivrees']);
+    Route::post('/he-livraisons/{fiche_reception_id}/demarrer', [HELivraisonController::class, 'demarrerLivraison']);
+    Route::post('/he-livraisons/{fiche_reception_id}/terminer', [HELivraisonController::class, 'terminerLivraison']);
+    Route::get('/he-livraisons/en-attente', [HELivraisonController::class, 'getEnAttenteLivraison']);
+    Route::get('/he-livraisons/en-cours', [HELivraisonController::class, 'getEnCoursLivraison']);
+    Route::get('/he-livraisons/livrees', [HELivraisonController::class, 'getLivrees']);
 });
 
 
 
 
-
-
-//teste avec postman
-//masquer apres:
-    // Route::post('/localisations', [LocalisationController::class, 'store']);
-    //   Route::put('/localisations/{localisation}', [LocalisationController::class, 'update']);
-
-
-    // Utilisateurs - toutes les routes protégées
-    // Route::get('/utilisateurs', [UtilisateurController::class, 'index']);
-    // Route::post('/utilisateurs', [UtilisateurController::class, 'store']);
-    // Route::get('/utilisateurs/{utilisateur}', [UtilisateurController::class, 'show']);
-    // Route::put('/utilisateurs/{utilisateur}', [UtilisateurController::class, 'update']);
-    // Route::delete('/utilisateurs/{utilisateur}', [UtilisateurController::class, 'destroy']);
-
-    // Route::get('/fournisseurs', [FournisseurController::class, 'index']);
-    // Route::post('/fournisseurs', [FournisseurController::class, 'store']);
-    // Route::get('/fournisseurs/{fournisseur}', [FournisseurController::class, 'show']);
-    // Route::put('/fournisseurs/{fournisseur}', [FournisseurController::class, 'update']);
-    // Route::delete('/fournisseurs/{fournisseur}', [FournisseurController::class, 'destroy']);
-    // Route::get('/fournisseurs/search/{search}', [FournisseurController::class, 'search']);
-
-    // Route::get('/fiche-receptions', [FicheReceptionController::class, 'getAllFiches']);
-    // Route::get('/fiche-receptions/{id}', [FicheReceptionController::class, 'getFicheById']);
-    // Route::post('/fiche-receptions', [FicheReceptionController::class, 'createFiche']);
-    // Route::put('/fiche-receptions/{id}', [FicheReceptionController::class, 'updateFiche']);
-    // Route::delete('/fiche-receptions/{id}', [FicheReceptionController::class, 'deleteFiche']);
-    // Route::get('/fiche-receptions/statut/{statut}', [FicheReceptionController::class, 'getFichesByStatut']);
-
-    // Route::post('/tests/demarrer/{ficheId}', [HETesterController::class, 'demarrerTest']);
-    // Route::post('/tests/resultats/{testId}', [HETesterController::class, 'enregistrerResultats']);
-    // Route::get('/tests/fiche/{ficheId}', [HETesterController::class, 'getTestsByFiche']);
-    // Route::get('/tests/{id}', [HETesterController::class, 'getTestById']);
-    // Route::get('/tests/en-cours', [HETesterController::class, 'getTestsEnCours']);
-    // Route::post('/tests/annuler/{testId}', [HETesterController::class, 'annulerTest']);
-
-
-    // Route::post('/validations/decider/{ficheId}', [HEValidationController::class, 'enregistrerDecision']);
-    // Route::get('/validations/fiche/{ficheId}', [HEValidationController::class, 'getValidationsByFiche']);
-    // Route::get('/validations/{id}', [HEValidationController::class, 'getValidationById']);
-    // Route::get('/validations/historique/all', [HEValidationController::class, 'getHistoriqueValidations']);
-
-
-    // Route::post('/facturations/creer/{ficheId}', [HEFacturationController::class, 'creerFacturation']);
-    // Route::get('/facturations/fiche/{ficheId}', [HEFacturationController::class, 'getFacturationByFiche']);
-    // Route::put('/facturations/{id}', [HEFacturationController::class, 'updateFacturation']);
-    // Route::get('/facturations/historique/all', [HEFacturationController::class, 'getHistoriqueFacturations']);
-
-
-// route commenter pour tester sans auth
