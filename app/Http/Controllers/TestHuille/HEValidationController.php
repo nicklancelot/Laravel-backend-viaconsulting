@@ -64,7 +64,7 @@ class HEValidationController extends Controller
                 ], 404);
             }
 
-            if ($fiche->statut !== 'Teste terminée') {
+            if ($fiche->statut !== 'Teste terminée' && $fiche->statut !== 'en cours de teste') {
                 return response()->json([
                     'success' => false,
                     'message' => 'La fiche doit être en statut "Teste terminée" pour être validée'
@@ -303,7 +303,7 @@ class HEValidationController extends Controller
     {
         switch ($decision) {
             case 'Accepter':
-                return 'Accepté';
+                return 'teste validé';
             case 'Refuser':
                 return 'Refusé';
             case 'A retraiter':

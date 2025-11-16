@@ -62,7 +62,7 @@ class HEFacturationController extends Controller
             }
 
             // Vérifier si la fiche est acceptée
-            if ($fiche->statut !== 'Accepté') {
+            if ($fiche->statut !== 'Accepté' && $fiche->statut !== 'teste validé') {
                 return response()->json([
                     'success' => false,
                     'message' => 'Seules les fiches avec statut "Accepté" peuvent être facturées'

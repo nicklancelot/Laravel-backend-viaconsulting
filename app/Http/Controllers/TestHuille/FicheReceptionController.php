@@ -19,7 +19,7 @@ class FicheReceptionController extends Controller
         try {
             $user = Auth::user();
             
-            $fiches = FicheReception::with(['fournisseur', 'siteCollecte', 'utilisateur'])
+            $fiches = FicheReception::with(['fournisseur', 'siteCollecte', 'utilisateur', 'tests'])
                 ->forUser($user)
                 ->orderBy('created_at', 'desc')
                 ->get();
