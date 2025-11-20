@@ -40,3 +40,5 @@ public function up(): void
         Schema::dropIfExists('caissiers');
     }
 };
+
+//teste MAJ
