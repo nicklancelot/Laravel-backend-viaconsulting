@@ -37,7 +37,7 @@ class FicheLivraisonController extends Controller
 
             $pvReception = PVReception::find($request->pv_reception_id);
             
-            // Statuts autorisés selon l'enum de la table
+            
             $statutsAutorises = ['paye', 'partiellement_livre'];
             if (!$pvReception) {
                 return response()->json([
@@ -94,11 +94,9 @@ class FicheLivraisonController extends Controller
 
             // Mettre à jour statut PV selon son statut actuel
             if ($pvReception->statut === 'paye') {
-                // Première livraison pour ce PV
+              
                 $pvReception->update(['statut' => 'en_attente_livraison']);
             } elseif ($pvReception->statut === 'partiellement_livre') {
-                // Livraison supplémentaire pour un PV déjà partiellement livré
-                // On garde le même statut car 'en_attente_livraison_partielle' n'existe pas dans l'enum
                 $pvReception->update(['statut' => 'en_attente_livraison']);
             }
 
@@ -136,7 +134,6 @@ class FicheLivraisonController extends Controller
                 ], 404);
             }
 
-            // Vérifier si déjà livrée (via existence de livraison)
             if ($ficheLivraison->livraison) {
                 return response()->json([
                     'status' => 'error',
@@ -171,7 +168,6 @@ class FicheLivraisonController extends Controller
                 ], 422);
             }
 
-            // Démarrer une transaction pour assurer la cohérence des données
             DB::beginTransaction();
 
             try {
@@ -180,7 +176,7 @@ class FicheLivraisonController extends Controller
                     'date_confirmation_livraison' => now()
                 ]);
 
-                // 2. Mettre à jour la quantité restante de la fiche de livraison (0 = complètement livrée)
+                // 2. Mettre à jour la quantité restante 
                 $ficheLivraison->update([
                     'quantite_restante' => 0
                 ]);
@@ -205,7 +201,6 @@ class FicheLivraisonController extends Controller
                 // Valider la transaction
                 DB::commit();
 
-                // Recharger les relations pour la réponse
                 $ficheLivraison->load(['pvReception.fournisseur', 'pvReception.provenance', 'livraison']);
                 $pvReception->refresh();
 
@@ -237,7 +232,6 @@ class FicheLivraisonController extends Controller
                 ], 200);
 
             } catch (\Exception $e) {
-                // Annuler la transaction en cas d'erreur
                 DB::rollBack();
                 throw $e;
             }
@@ -377,7 +371,7 @@ class FicheLivraisonController extends Controller
         }
     }
 
-    // GET /fiche-livraisons/{id}
+    // GET 
     public function show($id)
     {
         try {

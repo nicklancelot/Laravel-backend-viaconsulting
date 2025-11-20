@@ -314,7 +314,7 @@ class StockController extends Controller
                     'prix_total' => (float) ($resume->prix_total ?? 0),
                     'prix_unitaire_moyen' => (float) ($resume->prix_unitaire_moyen ?? 0),
                     'types_actifs' => $resume->types_actifs ?? 0,
-                    'poids_net_total' => (float) ($resume->poids_net_total ?? 0) // AJOUT
+                    'poids_net_total' => (float) ($resume->poids_net_total ?? 0) 
                 ],
                 'dernier_pv' => $dernierPV ? [
                     'numero_doc' => $dernierPV->numero_doc,

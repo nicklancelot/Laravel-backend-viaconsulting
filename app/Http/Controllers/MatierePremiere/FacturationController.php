@@ -70,14 +70,12 @@ public function store(Request $request)
 
         $facturation = Facturation::create($request->all());
         
-        // ✅ CORRECTION : Mettre à jour la dette du fournisseur seulement
+       
         $nouvelleDette = $pvReception->dette_fournisseur - $request->montant_paye;
         $pvReception->update([
             'dette_fournisseur' => max(0, $nouvelleDette)
         ]);
 
-        // ✅ SUPPRIMER : La création automatique d'impayé
-        // Les impayés seront créés manuellement si nécessaire
 
         return response()->json([
             'status' => 'success',
@@ -86,7 +84,6 @@ public function store(Request $request)
         ], 201);
 
     } catch (\Exception $e) {
-        // \Log::error('Erreur création facturation: ' . $e->getMessage());
         return response()->json([
             'status' => 'error',
             'message' => 'Erreur lors de la création de la facturation: ' . $e->getMessage()
@@ -189,7 +186,7 @@ public function store(Request $request)
                 ], 422);
             }
 
-            // Mettre à jour le paiement
+            
             $facturation->update([
                 'montant_paye' => $facturation->montant_paye + $request->montant_paye,
                 'mode_paiement' => $request->mode_paiement,

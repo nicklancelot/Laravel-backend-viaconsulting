@@ -11,9 +11,7 @@ use Illuminate\Support\Str;
 
 class FicheReceptionController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
+    
     public function index()
     {
         try {
@@ -145,85 +143,83 @@ class FicheReceptionController extends Controller
     /**
      * Update the specified resource in storage.
      */
-   /**
- * Update the specified resource in storage.
- */
-public function update(Request $request, $id)
-{
-    try {
-        DB::beginTransaction();
+ 
+    public function update(Request $request, $id)
+    {
+        try {
+            DB::beginTransaction();
 
-        $user = Auth::user();
-        $fiche = FicheReception::find($id);
+            $user = Auth::user();
+            $fiche = FicheReception::find($id);
 
-        if (!$fiche) {
+            if (!$fiche) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Fiche de réception non trouvée'
+                ], 404);
+            }
+
+            if ($user->role !== 'admin' && $fiche->utilisateur_id != $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Accès non autorisé pour modifier cette fiche de réception'
+                ], 403);
+            }
+
+            // CORRECTION : Liste complète des statuts autorisés
+            $validated = $request->validate([
+                'date_reception' => 'sometimes|date',
+                'heure_reception' => 'sometimes|date_format:H:i',
+                'fournisseur_id' => 'sometimes|exists:fournisseurs,id',
+                'site_collecte_id' => 'sometimes|exists:site_collectes,id',
+                'utilisateur_id' => 'sometimes|exists:utilisateurs,id',
+                'poids_brut' => 'sometimes|numeric|min:0',
+                'statut' => 'sometimes|in:en attente de teste,en cours de teste,Accepté,teste validé,teste invalide,En attente de livraison,payé,incomplet,partiellement payé,en attente de paiement,livré,Refusé,A retraiter'
+            ]);
+
+            if ($request->has('utilisateur_id') && $user->role !== 'admin' && $request->utilisateur_id != $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Vous ne pouvez assigner des fiches qu\'à votre propre compte'
+                ], 403);
+            }
+
+            foreach ($validated as $key => $value) {
+                $fiche->$key = $value;
+            }
+
+            $fiche->save();
+
+            DB::commit();
+
+            $fiche->load(['fournisseur', 'siteCollecte', 'utilisateur']);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Fiche de réception mise à jour avec succès',
+                'data' => $fiche,
+                'updated_fields' => array_keys($validated)
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Fiche de réception non trouvée'
-            ], 404);
-        }
-
-        if ($user->role !== 'admin' && $fiche->utilisateur_id != $user->id) {
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Accès non autorisé pour modifier cette fiche de réception'
-            ], 403);
+                'message' => 'Erreur lors de la mise à jour de la fiche',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // CORRECTION : Liste complète des statuts autorisés
-        $validated = $request->validate([
-            'date_reception' => 'sometimes|date',
-            'heure_reception' => 'sometimes|date_format:H:i',
-            'fournisseur_id' => 'sometimes|exists:fournisseurs,id',
-            'site_collecte_id' => 'sometimes|exists:site_collectes,id',
-            'utilisateur_id' => 'sometimes|exists:utilisateurs,id',
-            'poids_brut' => 'sometimes|numeric|min:0',
-            'statut' => 'sometimes|in:en attente de teste,en cours de teste,Accepté,teste validé,teste invalide,En attente de livraison,payé,incomplet,partiellement payé,en attente de paiement,livré,Refusé,A retraiter'
-        ]);
-
-        if ($request->has('utilisateur_id') && $user->role !== 'admin' && $request->utilisateur_id != $user->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Vous ne pouvez assigner des fiches qu\'à votre propre compte'
-            ], 403);
-        }
-
-        foreach ($validated as $key => $value) {
-            $fiche->$key = $value;
-        }
-
-        $fiche->save();
-
-        DB::commit();
-
-        $fiche->load(['fournisseur', 'siteCollecte', 'utilisateur']);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Fiche de réception mise à jour avec succès',
-            'data' => $fiche,
-            'updated_fields' => array_keys($validated)
-        ]);
-
-    } catch (\Illuminate\Validation\ValidationException $e) {
-        DB::rollBack();
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur de validation',
-            'errors' => $e->errors()
-        ], 422);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur lors de la mise à jour de la fiche',
-            'error' => $e->getMessage()
-        ], 500);
     }
-}
     /**
      * Remove the specified resource from storage.
-     */
+    */
     public function destroy($id)
     {
         try {
