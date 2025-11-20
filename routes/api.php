@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CaissierController;
 use App\Http\Controllers\LocalisationController;
 use App\Http\Controllers\MatierePremiere\FacturationController;
 use App\Http\Controllers\MatierePremiere\FicheLivraisonController;
@@ -71,6 +72,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/fournisseurs/{fournisseur}', [FournisseurController::class, 'update']);
     Route::delete('/fournisseurs/{fournisseur}', [FournisseurController::class, 'destroy']);
     Route::get('/fournisseurs/search/{search}', [FournisseurController::class, 'search']);
+
+        // Routes solde
+    Route::get('/caissiers', [CaissierController::class, 'index']);
+    Route::get('/caissiers/{id}', [CaissierController::class, 'show']);
+    //eto mi retrait/ajouster solde raha ilaina
+    Route::post('/caissiers', [CaissierController::class, 'store']);
+    Route::put('/caissiers/{id}', [CaissierController::class, 'update']);
+    Route::delete('/caissiers/{id}', [CaissierController::class, 'destroy']);
+    Route::post('/caissiers/{utilisateur_id}/ajuster', [CaissierController::class, 'ajusterSolde']);
+    Route::post('/caissiers/{utilisateur_id}/retirer', [CaissierController::class, 'retirerSolde']);
+
 
    
     Route::get('/pv-receptions', [PVReceptionController::class, 'index']);
