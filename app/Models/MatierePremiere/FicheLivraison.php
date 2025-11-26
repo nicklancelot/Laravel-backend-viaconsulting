@@ -4,6 +4,8 @@ namespace App\Models\MatierePremiere;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class FicheLivraison extends Model
 {
@@ -11,17 +13,15 @@ class FicheLivraison extends Model
 
     protected $fillable = [
         'pv_reception_id',
+        'livreur_id',
+        'destinateur_id',
         'date_livraison',
         'lieu_depart',
-        'livreur_nom',
-        'livreur_prenom',
-        'destinateur_fonction',
-        'destinateur_contact',
         'ristourne_regionale',
-        'ristourne_communale', // NOUVEAU
+        'ristourne_communale',
         'quantite_a_livrer',
-        'quantite_restante', // NOUVEAU
-        'est_partielle', // NOUVEAU
+        'quantite_restante',
+        'est_partielle'
     ];
 
        protected static function boot()
@@ -31,12 +31,7 @@ class FicheLivraison extends Model
         // Calcul automatique avant création
         static::creating(function ($fiche) {
             $pv = $fiche->pvReception;
-            
-            // Déterminer si c'est une livraison partielle
             $fiche->est_partielle = $fiche->quantite_a_livrer < $pv->quantite_restante;
-            
-            // La quantité restante initiale est égale à la quantité à livrer
-            // (sera mise à jour lors de la confirmation de livraison)
             $fiche->quantite_restante = $fiche->quantite_a_livrer;
         });
     }
@@ -50,6 +45,15 @@ class FicheLivraison extends Model
     public function livraison()
     {
         return $this->hasOne(Livraison::class);
+    }
+        public function livreur(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Livreur::class);
+    }
+
+    public function destinateur(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Destinateur::class);
     }
 
     // NOUVELLE méthode pour calculer le reste à livrer

@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Models\MatierePremiere;
-
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
 
 class Facturation extends Model
@@ -298,5 +298,9 @@ class Facturation extends Model
         $this->save();
 
         return $this;
+    }
+    public function provenance(): BelongsTo 
+    {
+        return $this->belongsTo(\App\Models\Provenances::class);
     }
 }

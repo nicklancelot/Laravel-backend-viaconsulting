@@ -17,6 +17,10 @@ return new class extends Migration
             $table->foreignId('fournisseur_id')->constrained()->onDelete('cascade');
             $table->foreignId('site_collecte_id')->constrained()->onDelete('cascade');
             $table->decimal('poids_brut', 10, 2);
+            $table->decimal('poids_agreer', 10, 2)->nullable(); 
+            $table->decimal('taux_humidite', 5, 2)->nullable();
+            $table->decimal('taux_dessiccation', 5, 2)->nullable();
+            $table->decimal('poids_net', 10, 2)->nullable();
             $table->enum('statut', [ 
                 'en attente de teste', 
                 'en cours de teste',  

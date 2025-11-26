@@ -154,4 +154,5 @@ class UtilisateurController extends Controller
             ], 500);
         }
     }
+
 }

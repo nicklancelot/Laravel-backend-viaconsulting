@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\TestHuille;
 
 use App\Http\Controllers\Controller;
+use App\Models\PayementAvance;
 use App\Models\TestHuille\FicheReception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,68 +41,93 @@ class FicheReceptionController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
-    {
-        try {
-            DB::beginTransaction();
+   public function store(Request $request)
+{
+    try {
+        DB::beginTransaction();
 
-            $user = Auth::user();
-            
-            $validated = $request->validate([
-                'date_reception' => 'required|date',
-                'heure_reception' => 'required|date_format:H:i',
-                'fournisseur_id' => 'required|exists:fournisseurs,id',
-                'site_collecte_id' => 'required|exists:site_collectes,id',
-                'utilisateur_id' => 'required|exists:utilisateurs,id',
-                'poids_brut' => 'required|numeric|min:0'
-            ]);
+        $user = Auth::user();
+        
+        $validated = $request->validate([
+            'date_reception' => 'required|date',
+            'heure_reception' => 'required|date_format:H:i',
+            'fournisseur_id' => 'required|exists:fournisseurs,id',
+            'site_collecte_id' => 'required|exists:site_collectes,id',
+            'utilisateur_id' => 'required|exists:utilisateurs,id',
+            'poids_brut' => 'required|numeric|min:0',
+            // NOUVEAUX CHAMPS
+            'poids_agreer' => 'nullable|numeric|min:0',
+            'taux_humidite' => 'nullable|numeric|min:0|max:100',
+            'taux_dessiccation' => 'nullable|numeric|min:0|max:100'
+        ]);
 
-            if ($user->role !== 'admin' && $validated['utilisateur_id'] != $user->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Vous ne pouvez créer des fiches que pour votre propre compte'
-                ], 403);
-            }
+        // VÉRIFICATION PAIEMENT EN AVANCE
+        $paiementEnAttente = \App\Models\PayementAvance::where('fournisseur_id', $validated['fournisseur_id'])
+            ->where('statut', 'en_attente')
+            ->exists();
 
-            $numeroDocument = 'REC-' . date('Ymd') . '-' . Str::upper(Str::random(6));
-
-            $fiche = FicheReception::create([
-                'numero_document' => $numeroDocument,
-                'date_reception' => $validated['date_reception'],
-                'heure_reception' => $validated['heure_reception'],
-                'fournisseur_id' => $validated['fournisseur_id'],
-                'site_collecte_id' => $validated['site_collecte_id'],
-                'utilisateur_id' => $validated['utilisateur_id'],
-                'poids_brut' => $validated['poids_brut'],
-                'statut' => 'en attente de teste'
-            ]);
-
-            DB::commit();
-
-            $fiche->load(['fournisseur', 'siteCollecte', 'utilisateur']);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Fiche de réception créée avec succès',
-                'data' => $fiche
-            ], 201);
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollBack();
+        if ($paiementEnAttente) {
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur de validation',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors de la création de la fiche',
-                'error' => $e->getMessage()
-            ], 500);
+                'message' => 'Impossible de créer la fiche : Ce fournisseur a un paiement en avance en attente de confirmation'
+            ], 400);
         }
+
+        if ($user->role !== 'admin' && $validated['utilisateur_id'] != $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous ne pouvez créer des fiches que pour votre propre compte'
+            ], 403);
+        }
+
+        $numeroDocument = 'REC-' . date('Ymd') . '-' . Str::upper(Str::random(6));
+
+        // CALCUL DU POIDS NET ET POIDS AGRÉÉ
+        $poidsNet = $this->calculerPoidsNet($validated);
+        $poidsAgreer = $validated['poids_agreer'] ?? $poidsNet; // Si non fourni, utiliser poids_net
+
+        $fiche = FicheReception::create([
+            'numero_document' => $numeroDocument,
+            'date_reception' => $validated['date_reception'],
+            'heure_reception' => $validated['heure_reception'],
+            'fournisseur_id' => $validated['fournisseur_id'],
+            'site_collecte_id' => $validated['site_collecte_id'],
+            'utilisateur_id' => $validated['utilisateur_id'],
+            'poids_brut' => $validated['poids_brut'],
+            // NOUVEAUX CHAMPS
+            'poids_agreer' => $poidsAgreer,
+            'taux_humidite' => $validated['taux_humidite'] ?? null,
+            'taux_dessiccation' => $validated['taux_dessiccation'] ?? null,
+            'poids_net' => $poidsNet,
+            'statut' => 'en attente de teste'
+        ]);
+
+        DB::commit();
+
+        $fiche->load(['fournisseur', 'siteCollecte', 'utilisateur']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Fiche de réception créée avec succès',
+            'data' => $fiche
+        ], 201);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        DB::rollBack();
+        return response()->json([
+            'success' => false,
+            'message' => 'Erreur de validation',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json([
+            'success' => false,
+            'message' => 'Erreur lors de la création de la fiche',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Display the specified resource.
@@ -144,79 +170,94 @@ class FicheReceptionController extends Controller
      * Update the specified resource in storage.
      */
  
-    public function update(Request $request, $id)
-    {
-        try {
-            DB::beginTransaction();
+   public function update(Request $request, $id)
+{
+    try {
+        DB::beginTransaction();
 
-            $user = Auth::user();
-            $fiche = FicheReception::find($id);
+        $user = Auth::user();
+        $fiche = FicheReception::find($id);
 
-            if (!$fiche) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Fiche de réception non trouvée'
-                ], 404);
-            }
-
-            if ($user->role !== 'admin' && $fiche->utilisateur_id != $user->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Accès non autorisé pour modifier cette fiche de réception'
-                ], 403);
-            }
-
-            // CORRECTION : Liste complète des statuts autorisés
-            $validated = $request->validate([
-                'date_reception' => 'sometimes|date',
-                'heure_reception' => 'sometimes|date_format:H:i',
-                'fournisseur_id' => 'sometimes|exists:fournisseurs,id',
-                'site_collecte_id' => 'sometimes|exists:site_collectes,id',
-                'utilisateur_id' => 'sometimes|exists:utilisateurs,id',
-                'poids_brut' => 'sometimes|numeric|min:0',
-                'statut' => 'sometimes|in:en attente de teste,en cours de teste,Accepté,teste validé,teste invalide,En attente de livraison,payé,incomplet,partiellement payé,en attente de paiement,livré,Refusé,A retraiter'
-            ]);
-
-            if ($request->has('utilisateur_id') && $user->role !== 'admin' && $request->utilisateur_id != $user->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Vous ne pouvez assigner des fiches qu\'à votre propre compte'
-                ], 403);
-            }
-
-            foreach ($validated as $key => $value) {
-                $fiche->$key = $value;
-            }
-
-            $fiche->save();
-
-            DB::commit();
-
-            $fiche->load(['fournisseur', 'siteCollecte', 'utilisateur']);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Fiche de réception mise à jour avec succès',
-                'data' => $fiche,
-                'updated_fields' => array_keys($validated)
-            ]);
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollBack();
+        if (!$fiche) {
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur de validation',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors de la mise à jour de la fiche',
-                'error' => $e->getMessage()
-            ], 500);
+                'message' => 'Fiche de réception non trouvée'
+            ], 404);
         }
+
+        if ($user->role !== 'admin' && $fiche->utilisateur_id != $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Accès non autorisé pour modifier cette fiche de réception'
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'date_reception' => 'sometimes|date',
+            'heure_reception' => 'sometimes|date_format:H:i',
+            'fournisseur_id' => 'sometimes|exists:fournisseurs,id',
+            'site_collecte_id' => 'sometimes|exists:site_collectes,id',
+            'utilisateur_id' => 'sometimes|exists:utilisateurs,id',
+            'poids_brut' => 'sometimes|numeric|min:0',
+            // NOUVEAUX CHAMPS
+            'poids_agreer' => 'nullable|numeric|min:0',
+            'taux_humidite' => 'nullable|numeric|min:0|max:100',
+            'taux_dessiccation' => 'nullable|numeric|min:0|max:100',
+            'statut' => 'sometimes|in:en attente de teste,en cours de teste,Accepté,teste validé,teste invalide,En attente de livraison,payé,incomplet,partiellement payé,en attente de paiement,livré,Refusé,A retraiter'
+        ]);
+
+        // RECALCUL DU POIDS NET SI NÉCESSAIRE
+        if ($request->hasAny(['poids_brut', 'taux_humidite', 'taux_dessiccation'])) {
+            $poidsNet = $this->calculerPoidsNet(array_merge($fiche->toArray(), $validated));
+            $validated['poids_net'] = $poidsNet;
+            
+            // Si poids_agreer n'est pas fourni, le mettre à jour avec le nouveau poids_net
+            if (!$request->has('poids_agreer')) {
+                $validated['poids_agreer'] = $poidsNet;
+            }
+        }
+
+        if ($request->has('utilisateur_id') && $user->role !== 'admin' && $request->utilisateur_id != $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous ne pouvez assigner des fiches qu\'à votre propre compte'
+            ], 403);
+        }
+
+        foreach ($validated as $key => $value) {
+            $fiche->$key = $value;
+        }
+
+        $fiche->save();
+
+        DB::commit();
+
+        $fiche->load(['fournisseur', 'siteCollecte', 'utilisateur']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Fiche de réception mise à jour avec succès',
+            'data' => $fiche,
+            'updated_fields' => array_keys($validated)
+        ]);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        DB::rollBack();
+        return response()->json([
+            'success' => false,
+            'message' => 'Erreur de validation',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json([
+            'success' => false,
+            'message' => 'Erreur lors de la mise à jour de la fiche',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
+
     /**
      * Remove the specified resource from storage.
     */
@@ -260,4 +301,21 @@ class FicheReceptionController extends Controller
             ], 500);
         }
     }
+ // MÉTHODE POUR CALCULER LE POIDS NET
+private function calculerPoidsNet(array $data): float
+{
+    $poidsBrut = $data['poids_brut'];
+    $tauxHumidite = $data['taux_humidite'] ?? null;
+    $tauxDessiccation = $data['taux_dessiccation'] ?? null;
+    
+    // Appliquer la dessiccation si les taux sont fournis
+    if ($tauxHumidite !== null && $tauxDessiccation !== null && $tauxHumidite > $tauxDessiccation) {
+        $excesHumidite = $tauxHumidite - $tauxDessiccation;
+        $dessiccation = $poidsBrut * ($excesHumidite / 100);
+        return $poidsBrut - $dessiccation;
+    }
+    
+    // Pas de dessiccation si humidité <= taux cible ou données manquantes
+    return $poidsBrut;
+}
 }

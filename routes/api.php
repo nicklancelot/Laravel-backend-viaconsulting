@@ -1,6 +1,10 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CaissierController;
+use App\Http\Controllers\DemandeSoldeController;
+use App\Http\Controllers\DestinateurControlleur;
+use App\Http\Controllers\LivreurControlleur;
 use App\Http\Controllers\LocalisationController;
 use App\Http\Controllers\MatierePremiere\FacturationController;
 use App\Http\Controllers\MatierePremiere\FicheLivraisonController;
@@ -9,8 +13,10 @@ use App\Http\Controllers\MatierePremiere\ImpayeController;
 use App\Http\Controllers\MatierePremiere\LivraisonController;
 use App\Http\Controllers\MatierePremiere\PVReceptionController;
 use App\Http\Controllers\MatierePremiere\StockController;
+use App\Http\Controllers\PayementEnAvanceController;
 use App\Http\Controllers\ProvenancesController;
 use App\Http\Controllers\SiteCollecteController;
+use App\Http\Controllers\SoldeUserController;
 use App\Http\Controllers\UtilisateurController;
 use App\Http\Controllers\TestHuille\FicheReceptionController;
 use App\Http\Controllers\TestHuille\HELivraisonController;
@@ -18,6 +24,7 @@ use App\Http\Controllers\TestHuille\HEFacturationController;
 use App\Http\Controllers\TestHuille\HEFicheLivraisonController;
 use App\Http\Controllers\TestHuille\HETesterController;
 use App\Http\Controllers\TestHuille\HEValidationController;
+use App\Http\Controllers\TransfertController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -25,197 +32,231 @@ use Illuminate\Support\Facades\Route;
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
 
-    Route::get('/localisations', [LocalisationController::class, 'index']);
-    Route::get('/localisations/{localisation}', [LocalisationController::class, 'show']);
-    Route::delete('/localisations/{localisation}', [LocalisationController::class, 'destroy']);
+    Route::prefix('localisations')->group(function () {
+        Route::get('/', [LocalisationController::class, 'index']);
+        Route::get('/{localisation}', [LocalisationController::class, 'show']);
+        Route::delete('/{localisation}', [LocalisationController::class, 'destroy']);
+    });
 
-    Route::get('/provenances', [ProvenancesController::class, 'index']);
-    Route::post('/provenances', [ProvenancesController::class, 'store']);
-    Route::get('/provenances/{provenance}', [ProvenancesController::class, 'show']);
-    Route::put('/provenances/{provenance}', [ProvenancesController::class, 'update']);
-    Route::delete('/provenances/{provenance}', [ProvenancesController::class, 'destroy']);
+    Route::prefix('provenances')->group(function () {
+        Route::get('/', [ProvenancesController::class, 'index']);
+        Route::post('/', [ProvenancesController::class, 'store']);
+        Route::get('/{provenance}', [ProvenancesController::class, 'show']);
+        Route::put('/{provenance}', [ProvenancesController::class, 'update']);
+        Route::delete('/{provenance}', [ProvenancesController::class, 'destroy']);
+    });
 
-    Route::get('/site-collectes', [SiteCollecteController::class, 'index']);
-    Route::post('/site-collectes', [SiteCollecteController::class, 'store']);
-    Route::get('/site-collectes/{siteCollecte}', [SiteCollecteController::class, 'show']);
-    Route::put('/site-collectes/{siteCollecte}', [SiteCollecteController::class, 'update']);
-    Route::delete('/site-collectes/{siteCollecte}', [SiteCollecteController::class, 'destroy']);
-
+    Route::prefix('site-collectes')->group(function () {
+        Route::get('/', [SiteCollecteController::class, 'index']);
+        Route::post('/', [SiteCollecteController::class, 'store']);
+        Route::get('/{siteCollecte}', [SiteCollecteController::class, 'show']);
+        Route::put('/{siteCollecte}', [SiteCollecteController::class, 'update']);
+        Route::delete('/{siteCollecte}', [SiteCollecteController::class, 'destroy']);
+    });
 
     // Nouvelle route pour la vérification admin
     Route::post('/verify-admin', [AuthController::class, 'verifyAdmin']);
 
-    // Routes protégées par authentification
 Route::middleware('auth:sanctum')->group(function () {
-    // Auth routes
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'user']);
+    
+    Route::prefix('localisations')->group(function () {
+        Route::post('/', [LocalisationController::class, 'store']);
+        Route::put('/{localisation}', [LocalisationController::class, 'update']);
+    });
 
-    // //Localisations - routes protégées (écriture)
-    Route::post('/localisations', [LocalisationController::class, 'store']);
-    Route::put('/localisations/{localisation}', [LocalisationController::class, 'update']);
-    // Route::delete('/localisations/{localisation}', [LocalisationController::class, 'destroy']);
+    Route::prefix('caissiers')->group(function () {
+        Route::get('/', [CaissierController::class, 'index']);
+        Route::post('/', [CaissierController::class, 'store']);
+        Route::get('/{id}', [CaissierController::class, 'show']);
+        Route::put('/{id}', [CaissierController::class, 'update']);
+        Route::delete('/{id}', [CaissierController::class, 'destroy']);
+        Route::post('/{utilisateur_id}/ajuster', [CaissierController::class, 'ajusterSolde']);
+        Route::post('/{utilisateur_id}/retirer', [CaissierController::class, 'retirerSolde']);
+    });
 
-    // Route::get('/provenances', [ProvenancesController::class, 'index']);
-    // Route::post('/provenances', [ProvenancesController::class, 'store']);
-    // Route::get('/provenances/{provenance}', [ProvenancesController::class, 'show']);
-    // Route::put('/provenances/{provenance}', [ProvenancesController::class, 'update']);
-    // Route::delete('/provenances/{provenance}', [ProvenancesController::class, 'destroy']);
+    //transfert solde
+    Route::prefix('transferts')->group(function () {
+        Route::post('/', [TransfertController::class, 'store']);
+        Route::get('/', [TransfertController::class, 'index']);
+        Route::get('/{id}', [TransfertController::class, 'show']);
+        Route::get('/utilisateur/{utilisateur_id}', [TransfertController::class, 'getTransfertsByUtilisateur']);
+    });
+    
+    Route::get('/utilisateurs/{id}', [TransfertController::class, 'getUtilisateur']);
+    Route::get('/solde-actuel', [TransfertController::class, 'getSoldeActuel']);
+
+    // Routes pour les demandes de solde
+    Route::prefix('demande-soldes')->group(function () {
+        Route::get('/', [DemandeSoldeController::class, 'index']);
+        Route::post('/', [DemandeSoldeController::class, 'store']);
+        Route::get('/{id}', [DemandeSoldeController::class, 'show']);
+        Route::put('/{id}/statut', [DemandeSoldeController::class, 'updateStatut']);
+        Route::delete('/{id}', [DemandeSoldeController::class, 'destroy']);
+        Route::get('/utilisateur/{utilisateur_id}', [DemandeSoldeController::class, 'mesDemandes']);
+        Route::get('/statut/en-attente', [DemandeSoldeController::class, 'demandesEnAttente']);
+        Route::get('/statistiques', [DemandeSoldeController::class, 'statistiques']);
+    });
 
     // Utilisateurs - toutes les routes protégées
-    Route::get('/utilisateurs', [UtilisateurController::class, 'index']);
-    Route::post('/utilisateurs', [UtilisateurController::class, 'store']);
-    Route::get('/utilisateurs/{utilisateur}', [UtilisateurController::class, 'show']);
-    Route::put('/utilisateurs/{utilisateur}', [UtilisateurController::class, 'update']);
-    Route::delete('/utilisateurs/{utilisateur}', [UtilisateurController::class, 'destroy']);
+    Route::prefix('utilisateurs')->group(function () {
+        Route::get('/', [UtilisateurController::class, 'index']);
+        Route::post('/', [UtilisateurController::class, 'store']);
+        Route::get('/{utilisateur}', [UtilisateurController::class, 'show']);
+        Route::put('/{utilisateur}', [UtilisateurController::class, 'update']);
+        Route::delete('/{utilisateur}', [UtilisateurController::class, 'destroy']);
+    });
+    
+    //get solde:
+    Route::prefix('soldes-utilisateurs')->group(function () {
+        Route::get('/', [SoldeUserController::class, 'index']);
+        Route::get('/{utilisateur_id}', [SoldeUserController::class, 'show']);
+    });
 
-    Route::get('/fournisseurs', [FournisseurController::class, 'index']);
-    Route::post('/fournisseurs', [FournisseurController::class, 'store']);
-    Route::get('/fournisseurs/{fournisseur}', [FournisseurController::class, 'show']);
-    Route::put('/fournisseurs/{fournisseur}', [FournisseurController::class, 'update']);
-    Route::delete('/fournisseurs/{fournisseur}', [FournisseurController::class, 'destroy']);
-    Route::get('/fournisseurs/search/{search}', [FournisseurController::class, 'search']);
+    // Routes pour les paiements en avance
+    Route::prefix('paiements-avance')->group(function () {
+        Route::get('/', [PayementEnAvanceController::class, 'index']);
+        Route::post('/', [PayementEnAvanceController::class, 'store']);
+        Route::get('/{id}', [PayementEnAvanceController::class, 'show']);
+        Route::put('/{id}/confirmer', [PayementEnAvanceController::class, 'confirmerPaiement']);
+        Route::put('/{id}/annuler', [PayementEnAvanceController::class, 'annulerPaiement']);
+        Route::get('/retard/en-retard', [PayementEnAvanceController::class, 'getPaiementsEnRetard']);
+        Route::get('/statistiques', [PayementEnAvanceController::class, 'statistiques']);
+    });
 
-   
-    Route::get('/pv-receptions', [PVReceptionController::class, 'index']);
-    Route::post('/pv-receptions', [PVReceptionController::class, 'store']);
-    Route::get('/pv-receptions/{pvReception}', [PVReceptionController::class, 'show']);
-    Route::put('/pv-receptions/{pvReception}', [PVReceptionController::class, 'update']);
-    Route::delete('/pv-receptions/{pvReception}', [PVReceptionController::class, 'destroy']);
+    Route::prefix('fournisseurs')->group(function () {
+        Route::get('/', [FournisseurController::class, 'index']);
+        Route::post('/', [FournisseurController::class, 'store']);
+        Route::get('/{fournisseur}', [FournisseurController::class, 'show']);
+        Route::put('/{fournisseur}', [FournisseurController::class, 'update']);
+        Route::delete('/{fournisseur}', [FournisseurController::class, 'destroy']);
+        Route::get('/search/{search}', [FournisseurController::class, 'search']);
+    });
 
-    Route::get('/facturations', [FacturationController::class, 'index']);
-    Route::post('/facturations', [FacturationController::class, 'store']);
-    Route::get('/facturations/{id}', [FacturationController::class, 'show']);
-    Route::put('/facturations/{id}', [FacturationController::class, 'update']);
-    Route::post('/facturations/{id}/paiement', [FacturationController::class, 'enregistrerPaiement']);
+    Route::prefix('pv-receptions')->group(function () {
+        Route::get('/', [PVReceptionController::class, 'index']);
+        Route::post('/', [PVReceptionController::class, 'store']);
+        Route::get('/{pvReception}', [PVReceptionController::class, 'show']);
+        Route::put('/{pvReception}', [PVReceptionController::class, 'update']);
+        Route::delete('/{pvReception}', [PVReceptionController::class, 'destroy']);
+    });
+
+    Route::prefix('facturations')->group(function () {
+        Route::get('/', [FacturationController::class, 'index']);
+        Route::post('/', [FacturationController::class, 'store']);
+        Route::get('/{id}', [FacturationController::class, 'show']);
+        Route::put('/{id}', [FacturationController::class, 'update']);
+        Route::post('/{id}/paiement', [FacturationController::class, 'enregistrerPaiement']);
+    });
 
     // Routes pour les impayés
-    Route::get('/impayes', [ImpayeController::class, 'index']);
-    Route::post('/impayes', [ImpayeController::class, 'store']);
-    Route::get('/impayes/{id}', [ImpayeController::class, 'show']);
-    Route::put('/impayes/{id}', [ImpayeController::class, 'update']);
-    Route::post('/impayes/{id}/paiement', [ImpayeController::class, 'enregistrerPaiement']);
+    Route::prefix('impayes')->group(function () {
+        Route::get('/', [ImpayeController::class, 'index']);
+        Route::post('/', [ImpayeController::class, 'store']);
+        Route::get('/{id}', [ImpayeController::class, 'show']);
+        Route::put('/{id}', [ImpayeController::class, 'update']);
+        Route::post('/{id}/paiement', [ImpayeController::class, 'enregistrerPaiement']);
+    });
 
     // Routes pour fiches de livraison
-    Route::get('/fiche-livraisons', [FicheLivraisonController::class, 'index']);
-    Route::post('/fiche-livraisons', [FicheLivraisonController::class, 'store']);
-    Route::get('/fiche-livraisons/{id}', [FicheLivraisonController::class, 'show']);
-    Route::post('/fiche-livraisons/{id}/livrer', [FicheLivraisonController::class, 'livrer']); 
-    Route::post('/fiche-livraisons/{id}/livrer-partielle', [FicheLivraisonController::class, 'livrerPartielle']);
+    Route::prefix('fiche-livraisons')->group(function () {
+        Route::get('/', [FicheLivraisonController::class, 'index']);
+        Route::post('/', [FicheLivraisonController::class, 'store']);
+        Route::get('/{id}', [FicheLivraisonController::class, 'show']);
+        Route::post('/{id}/livrer', [FicheLivraisonController::class, 'livrer']); 
+        Route::post('/{id}/livrer-partielle', [FicheLivraisonController::class, 'livrerPartielle']);
+    });
 
     // Routes pour livraisons (confirmation)
-    Route::get('/livraisons', [LivraisonController::class, 'index']);
-    Route::get('/livraisons/{id}', [LivraisonController::class, 'show']);
+    Route::prefix('livraisons')->group(function () {
+        Route::get('/', [LivraisonController::class, 'index']);
+        Route::get('/{id}', [LivraisonController::class, 'show']);
+    });
 
-    Route::get('/stock/stats', [StockController::class, 'getStockStats']);
-    Route::get('/stock/historique', [StockController::class, 'getHistoriqueMouvements']);
-    Route::get('/stock/tendances', [StockController::class, 'getTendancesStock']);
+    Route::prefix('stock')->group(function () {
+        Route::get('/stats', [StockController::class, 'getStockStats']);
+        Route::get('/historique', [StockController::class, 'getHistoriqueMouvements']);
+        Route::get('/tendances', [StockController::class, 'getTendancesStock']);
+    });
 
-
-
-
-    Route::get('/fiche-receptions', [FicheReceptionController::class, 'index']);
-    Route::post('/fiche-receptions', [FicheReceptionController::class, 'store']);
-    Route::get('/fiche-receptions/{id}', [FicheReceptionController::class, 'show']);
-    Route::put('/fiche-receptions/{id}', [FicheReceptionController::class, 'update']);
-    Route::delete('/fiche-receptions/{id}', [FicheReceptionController::class, 'destroy']);
-
+    Route::prefix('fiche-receptions')->group(function () {
+        Route::get('/', [FicheReceptionController::class, 'index']);
+        Route::post('/', [FicheReceptionController::class, 'store']);
+        Route::get('/{id}', [FicheReceptionController::class, 'show']);
+        Route::put('/{id}', [FicheReceptionController::class, 'update']);
+        Route::delete('/{id}', [FicheReceptionController::class, 'destroy']);
+    });
 
     // Routes pour les tests
-    Route::get('/tests', [HETesterController::class, 'index']);
-    Route::post('/tests', [HETesterController::class, 'store']);
-    Route::get('/tests/{id}', [HETesterController::class, 'show']);
-    Route::put('/tests/{id}', [HETesterController::class, 'update']);
-    Route::delete('/tests/{id}', [HETesterController::class, 'destroy']);
-    Route::post('/tests/{id}/terminer', [HETesterController::class, 'terminerTest']);
-    Route::get('/tests/en-cours', [HETesterController::class, 'testsEnCours']);
-    Route::get('/tests/termines', [HETesterController::class, 'testsTermines']);
+    Route::prefix('tests')->group(function () {
+        Route::get('/', [HETesterController::class, 'index']);
+        Route::post('/', [HETesterController::class, 'store']);
+        Route::get('/{id}', [HETesterController::class, 'show']);
+        Route::put('/{id}', [HETesterController::class, 'update']);
+        Route::delete('/{id}', [HETesterController::class, 'destroy']);
+        Route::post('/{id}/terminer', [HETesterController::class, 'terminerTest']);
+        Route::get('/en-cours', [HETesterController::class, 'testsEnCours']);
+        Route::get('/termines', [HETesterController::class, 'testsTermines']);
+    });
 
-
-// Routes pour les validations
-    Route::get('/validations', [HEValidationController::class, 'index']);
-    Route::post('/validations', [HEValidationController::class, 'store']);
-    Route::get('/validations/{id}', [HEValidationController::class, 'show']);
-    Route::put('/validations/{id}', [HEValidationController::class, 'update']);
-    Route::delete('/validations/{id}', [HEValidationController::class, 'destroy']);
-    Route::get('/validations/fiche/{fiche_reception_id}', [HEValidationController::class, 'getByFicheReception']);
+    // Routes pour les validations
+    Route::prefix('validations')->group(function () {
+        Route::get('/', [HEValidationController::class, 'index']);
+        Route::post('/', [HEValidationController::class, 'store']);
+        Route::get('/{id}', [HEValidationController::class, 'show']);
+        Route::put('/{id}', [HEValidationController::class, 'update']);
+        Route::delete('/{id}', [HEValidationController::class, 'destroy']);
+        Route::get('/fiche/{fiche_reception_id}', [HEValidationController::class, 'getByFicheReception']);
+    });
 
     // Routes pour la facturation
-    Route::get('/facturations', [HEFacturationController::class, 'index']);
-    Route::post('/facturations', [HEFacturationController::class, 'store']);
-    Route::get('/facturations/{id}', [HEFacturationController::class, 'show']);
-    Route::put('/facturations/{id}', [HEFacturationController::class, 'update']);
-    Route::delete('/facturations/{id}', [HEFacturationController::class, 'destroy']);
-    Route::post('/facturations/{id}/paiement', [HEFacturationController::class, 'ajouterPaiement']);
-    Route::get('/facturations/statut/{statut}', [HEFacturationController::class, 'getByStatutPaiement']);
-    Route::get('/facturations/impayes', [HEFacturationController::class, 'getImpayes']);
+    Route::prefix('/he-facturations')->group(function () {
+        Route::get('/', [HEFacturationController::class, 'index']);
+        Route::post('/', [HEFacturationController::class, 'store']);
+        Route::get('/{id}', [HEFacturationController::class, 'show']);
+        Route::put('/{id}', [HEFacturationController::class, 'update']);
+        Route::delete('/{id}', [HEFacturationController::class, 'destroy']);
+        Route::post('/{id}/paiement', [HEFacturationController::class, 'ajouterPaiement']);
+        Route::get('/statut/{statut}', [HEFacturationController::class, 'getByStatutPaiement']);
+        Route::get('/impayes', [HEFacturationController::class, 'getImpayes']);
+    });
 
     // Routes pour les fiches de livraison (CRUD complet)
-    Route::get('/fiche-livraisons', [HEFicheLivraisonController::class, 'index']);
-    Route::post('/fiche-livraisons', [HEFicheLivraisonController::class, 'store']);
-    Route::get('/fiche-livraisons/{id}', [HEFicheLivraisonController::class, 'show']);
-    Route::put('/fiche-livraisons/{id}', [HEFicheLivraisonController::class, 'update']);
-    Route::delete('/fiche-livraisons/{id}', [HEFicheLivraisonController::class, 'destroy']);
-    Route::get('/fiche-livraisons/fiche/{fiche_reception_id}', [HEFicheLivraisonController::class, 'getByFicheReception']);
+    Route::prefix('he-fiche-livraisons')->group(function () {
+        Route::get('/', [HEFicheLivraisonController::class, 'index']);
+        Route::post('/', [HEFicheLivraisonController::class, 'store']);
+        Route::get('/{id}', [HEFicheLivraisonController::class, 'show']);
+        Route::put('/{id}', [HEFicheLivraisonController::class, 'update']);
+        Route::delete('/{id}', [HEFicheLivraisonController::class, 'destroy']);
+        Route::get('/fiche/{fiche_reception_id}', [HEFicheLivraisonController::class, 'getByFicheReception']);
+    });
 
     // Routes pour la gestion des livraisons
-    Route::post('/livraisons/{fiche_reception_id}/demarrer', [HELivraisonController::class, 'demarrerLivraison']);
-    Route::post('/livraisons/{fiche_reception_id}/terminer', [HELivraisonController::class, 'terminerLivraison']);
-    Route::get('/livraisons/en-attente', [HELivraisonController::class, 'getEnAttenteLivraison']);
-    Route::get('/livraisons/en-cours', [HELivraisonController::class, 'getEnCoursLivraison']);
-    Route::get('/livraisons/livrees', [HELivraisonController::class, 'getLivrees']);
+    Route::prefix('he-livraisons')->group(function () {
+        Route::post('/{fiche_reception_id}/demarrer', [HELivraisonController::class, 'demarrerLivraison']);
+        Route::post('/{fiche_reception_id}/terminer', [HELivraisonController::class, 'terminerLivraison']);
+        Route::get('/en-attente', [HELivraisonController::class, 'getEnAttenteLivraison']);
+        Route::get('/en-cours', [HELivraisonController::class, 'getEnCoursLivraison']);
+        Route::get('/livrees', [HELivraisonController::class, 'getLivrees']);
+    });
+
+        Route::prefix('livreurs')->group(function () {
+    Route::get('/', [LivreurControlleur::class, 'index']);
+    Route::post('/', [LivreurControlleur::class, 'store']);
+    Route::get('/{id}', [LivreurControlleur::class, 'show']);
+    Route::put('/{id}', [LivreurControlleur::class, 'update']);
+    Route::delete('/{id}', [LivreurControlleur::class, 'destroy']);
+    Route::get('/utilisateur/{userId}', [LivreurControlleur::class, 'getByUser']);
+    });
+
+// Routes pour Destinateurs
+Route::prefix('destinateurs')->group(function () {
+    Route::get('/', [DestinateurControlleur::class, 'index']);
+    Route::post('/', [DestinateurControlleur::class, 'store']);
+    Route::get('/{id}', [DestinateurControlleur::class, 'show']);
+    Route::put('/{id}', [DestinateurControlleur::class, 'update']);
+    Route::delete('/{id}', [DestinateurControlleur::class, 'destroy']);
+    Route::get('/utilisateur/{userId}', [DestinateurControlleur::class, 'getByUser']);
 });
-
-
-
-
-
-
-//teste avec postman
-//masquer apres:
-    // Route::post('/localisations', [LocalisationController::class, 'store']);
-    //   Route::put('/localisations/{localisation}', [LocalisationController::class, 'update']);
-
-
-    // Utilisateurs - toutes les routes protégées
-    // Route::get('/utilisateurs', [UtilisateurController::class, 'index']);
-    // Route::post('/utilisateurs', [UtilisateurController::class, 'store']);
-    // Route::get('/utilisateurs/{utilisateur}', [UtilisateurController::class, 'show']);
-    // Route::put('/utilisateurs/{utilisateur}', [UtilisateurController::class, 'update']);
-    // Route::delete('/utilisateurs/{utilisateur}', [UtilisateurController::class, 'destroy']);
-
-    // Route::get('/fournisseurs', [FournisseurController::class, 'index']);
-    // Route::post('/fournisseurs', [FournisseurController::class, 'store']);
-    // Route::get('/fournisseurs/{fournisseur}', [FournisseurController::class, 'show']);
-    // Route::put('/fournisseurs/{fournisseur}', [FournisseurController::class, 'update']);
-    // Route::delete('/fournisseurs/{fournisseur}', [FournisseurController::class, 'destroy']);
-    // Route::get('/fournisseurs/search/{search}', [FournisseurController::class, 'search']);
-
-    // Route::get('/fiche-receptions', [FicheReceptionController::class, 'getAllFiches']);
-    // Route::get('/fiche-receptions/{id}', [FicheReceptionController::class, 'getFicheById']);
-    // Route::post('/fiche-receptions', [FicheReceptionController::class, 'createFiche']);
-    // Route::put('/fiche-receptions/{id}', [FicheReceptionController::class, 'updateFiche']);
-    // Route::delete('/fiche-receptions/{id}', [FicheReceptionController::class, 'deleteFiche']);
-    // Route::get('/fiche-receptions/statut/{statut}', [FicheReceptionController::class, 'getFichesByStatut']);
-
-    // Route::post('/tests/demarrer/{ficheId}', [HETesterController::class, 'demarrerTest']);
-    // Route::post('/tests/resultats/{testId}', [HETesterController::class, 'enregistrerResultats']);
-    // Route::get('/tests/fiche/{ficheId}', [HETesterController::class, 'getTestsByFiche']);
-    // Route::get('/tests/{id}', [HETesterController::class, 'getTestById']);
-    // Route::get('/tests/en-cours', [HETesterController::class, 'getTestsEnCours']);
-    // Route::post('/tests/annuler/{testId}', [HETesterController::class, 'annulerTest']);
-
-
-    // Route::post('/validations/decider/{ficheId}', [HEValidationController::class, 'enregistrerDecision']);
-    // Route::get('/validations/fiche/{ficheId}', [HEValidationController::class, 'getValidationsByFiche']);
-    // Route::get('/validations/{id}', [HEValidationController::class, 'getValidationById']);
-    // Route::get('/validations/historique/all', [HEValidationController::class, 'getHistoriqueValidations']);
-
-
-    // Route::post('/facturations/creer/{ficheId}', [HEFacturationController::class, 'creerFacturation']);
-    // Route::get('/facturations/fiche/{ficheId}', [HEFacturationController::class, 'getFacturationByFiche']);
-    // Route::put('/facturations/{id}', [HEFacturationController::class, 'updateFacturation']);
-    // Route::get('/facturations/historique/all', [HEFacturationController::class, 'getHistoriqueFacturations']);
-
-
-// route commenter pour tester sans auth
+});

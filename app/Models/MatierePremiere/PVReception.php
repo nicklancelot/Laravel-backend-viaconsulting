@@ -39,8 +39,8 @@ class PVReception extends Model
 
         // Calcul automatique de la quantité totale avant création
         static::creating(function ($pv) {
-            $pv->quantite_totale = $pv->nombre_colisage * $pv->poids_emballage;
-            $pv->quantite_restante = $pv->quantite_totale;
+            $pv->quantite_totale = $pv->poids_net;
+            $pv->quantite_restante = $pv->poids_net;
         });
 
         // Recalcul après modification
@@ -128,18 +128,20 @@ class PVReception extends Model
     }
 
     // Méthode pour calculer le poids net
-    public function calculerPoidsNet(): float
-    {
-        if ($this->type === 'CG') {
-            // Pour CG: poids_net = (poids_brut - poids_emballage) * (1 - taux_dessiccation/100)
-            $poidsSansEmballage = $this->poids_brut - $this->poids_emballage;
-            $dessiccation = $poidsSansEmballage * ($this->taux_dessiccation / 100);
-            return $poidsSansEmballage - $dessiccation;
-        }
-        
-        // Pour FG et GG: poids_net = poids_brut - poids_emballage
-        return $this->poids_brut - $this->poids_emballage;
+public function calculerPoidsNet(): float
+{
+    $poidsSansEmballage = $this->poids_brut - $this->poids_emballage;
+    
+    // Appliquer la dessiccation pour TOUS les types si les taux sont fournis
+    if ($this->taux_humidite !== null && $this->taux_dessiccation !== null && $this->taux_humidite > $this->taux_dessiccation) {
+        $excesHumidite = $this->taux_humidite - $this->taux_dessiccation;
+        $dessiccation = $poidsSansEmballage * ($excesHumidite / 100);
+        return $poidsSansEmballage - $dessiccation;
     }
+    
+    // Pas de dessiccation si humidité <= taux cible ou données manquantes
+    return $poidsSansEmballage;
+}
 
     // Méthode pour calculer le prix total
     public function calculerPrixTotal(): float

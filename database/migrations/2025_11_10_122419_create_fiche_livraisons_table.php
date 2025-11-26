@@ -13,14 +13,12 @@ return new class extends Migration
             
             // Référence au PV de réception
             $table->foreignId('pv_reception_id')->constrained('p_v_receptions')->onDelete('cascade');
+            $table->foreignId('livreur_id')->constrained('livreurs')->onDelete('cascade');
+            $table->foreignId('destinateur_id')->constrained('destinateurs')->onDelete('cascade');
             
             // Détails de livraison
             $table->date('date_livraison');
             $table->string('lieu_depart');
-            $table->string('livreur_nom');
-            $table->string('livreur_prenom');
-            $table->string('destinateur_fonction');
-            $table->string('destinateur_contact');
             $table->decimal('ristourne_regionale', 10, 2)->default(0);
             $table->decimal('ristourne_communale', 10, 2)->default(0); // NOUVEAU
             $table->decimal('quantite_a_livrer', 10, 2);

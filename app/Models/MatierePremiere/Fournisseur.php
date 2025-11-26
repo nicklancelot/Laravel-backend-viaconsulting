@@ -18,7 +18,7 @@ class Fournisseur extends Model
         'identification_fiscale',
         'localisation_id',
         'contact',
-        'utilisateur_id' // Nouveau champ
+        'utilisateur_id' 
     ];
 
     public function localisation(): BelongsTo

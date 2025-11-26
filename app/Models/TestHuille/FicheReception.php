@@ -21,12 +21,14 @@ class FicheReception extends Model
         'site_collecte_id',
         'utilisateur_id',
         'poids_brut',
+        'poids_agreer',
+        'taux_humidite',
+        'taux_dessiccation', 
+        'poids_net', 
         'statut'
     ];
 
     // Relations
-
-    // Dans App\Models\TestHuille\FicheReception.php
     public function ficheLivraison()
     {
         return $this->hasOne(HEFicheLivraison::class);
@@ -62,7 +64,7 @@ class FicheReception extends Model
         return $this->hasOne(HETester::class, 'fiche_reception_id')->latest();
     }
 
-    // Scope pour filtrer par utilisateur selon le rôle
+  
     public function scopeForUser(Builder $query, $user)
     {
         if ($user->role === 'admin') {

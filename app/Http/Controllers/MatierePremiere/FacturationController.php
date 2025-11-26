@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\MatierePremiere\Facturation;
 use App\Models\MatierePremiere\Impaye;
 use App\Models\MatierePremiere\PVReception;
+use App\Models\SoldeUser;
 use Illuminate\Http\Request;
 
 class FacturationController extends Controller
@@ -33,7 +34,7 @@ public function store(Request $request)
             'date_facturation' => 'required|date',
             'mode_paiement' => 'required|in:especes,virement,cheque,carte,mobile_money',
             'reference_paiement' => 'nullable|string|max:255',
-            'montant_total' => 'required|numeric|min:0',
+            'montant_total' => 'nullable|numeric|min:0',
             'montant_paye' => 'required|numeric|min:0',
         ]);
 
@@ -63,6 +64,28 @@ public function store(Request $request)
             ], 422);
         }
 
+        // VÉRIFICATION SOLDE UTILISATEUR
+        $soldeUser = SoldeUser::where('utilisateur_id', $pvReception->utilisateur_id)->first();
+        $soldeActuel = $soldeUser ? $soldeUser->solde : 0;
+
+        if ($soldeActuel < $request->montant_paye) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Solde utilisateur insuffisant. Solde disponible: ' . number_format($soldeActuel, 0, ',', ' ') . ' Ar - Montant à payer: ' . number_format($request->montant_paye, 0, ',', ' ') . ' Ar',
+                'solde_actuel' => $soldeActuel,
+                'montant_paye' => $request->montant_paye,
+                'solde_insuffisant' => true
+            ], 400);
+        }
+
+        // DÉCRÉMENTER LE SOLDE UTILISATEUR
+        if ($soldeUser && $request->montant_paye > 0) {
+            $soldeUser->decrement('solde', $request->montant_paye);
+            $nouveauSolde = $soldeUser->solde;
+        } else {
+            $nouveauSolde = $soldeActuel;
+        }
+
         // Générer le numéro de facture automatiquement
         $request->merge([
             'numero_facture' => Facturation::genererNumeroFacture()
@@ -70,17 +93,21 @@ public function store(Request $request)
 
         $facturation = Facturation::create($request->all());
         
-       
+        // Mettre à jour la dette du fournisseur
         $nouvelleDette = $pvReception->dette_fournisseur - $request->montant_paye;
         $pvReception->update([
             'dette_fournisseur' => max(0, $nouvelleDette)
         ]);
 
-
         return response()->json([
             'status' => 'success',
             'message' => 'Facturation créée avec succès',
-            'data' => $facturation->load(['pvReception.fournisseur', 'pvReception.provenance'])
+            'data' => $facturation->load(['pvReception.fournisseur', 'pvReception.provenance']),
+            'solde_info' => [
+                'solde_avant' => $soldeActuel,
+                'solde_apres' => $nouveauSolde,
+                'montant_debite' => $request->montant_paye
+            ]
         ], 201);
 
     } catch (\Exception $e) {
@@ -186,7 +213,7 @@ public function store(Request $request)
                 ], 422);
             }
 
-            
+            // Mettre à jour le paiement
             $facturation->update([
                 'montant_paye' => $facturation->montant_paye + $request->montant_paye,
                 'mode_paiement' => $request->mode_paiement,

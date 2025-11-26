@@ -13,8 +13,6 @@ return new class extends Migration
             
             // Référence à la fiche de livraison
             $table->foreignId('fiche_livraison_id')->constrained('fiche_livraisons')->onDelete('cascade');
-            
-            // Confirmation simple (pas de détails supplémentaires)
             $table->timestamp('date_confirmation_livraison')->useCurrent();
             
             $table->timestamps();
