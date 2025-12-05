@@ -39,193 +39,199 @@ class FicheReceptionController extends Controller
         }
     }
 
-    public function store(Request $request)
-    {
-        try {
-            DB::beginTransaction();
+   public function store(Request $request)
+{
+    try {
+        DB::beginTransaction();
 
-            $user = Auth::user();
-            
-            $validated = $request->validate([
-                'date_reception' => 'required|date',
-                'heure_reception' => 'required|date_format:H:i',
-                'fournisseur_id' => 'required|exists:fournisseurs,id',
-                'site_collecte_id' => 'required|exists:site_collectes,id',
-                'utilisateur_id' => 'required|exists:utilisateurs,id',
-                'poids_brut' => 'required|numeric|min:0',
-                'poids_agreer' => 'nullable|numeric|min:0',
-                'taux_humidite' => 'nullable|numeric|min:0|max:100',
-                'taux_dessiccation' => 'nullable|numeric|min:0|max:100',
-                'type_emballage' => 'nullable|in:sac,bidon,fut',
-                'poids_emballage' => 'nullable|numeric|min:0',
-                'nombre_colisage' => 'nullable|integer|min:0',
-                'prix_unitaire' => 'nullable|numeric|min:0',
-                'prix_total' => 'nullable|numeric|min:0'
-            ]);
+        $user = Auth::user();
+        
+        $validated = $request->validate([
+            'date_reception' => 'required|date',
+            'heure_reception' => 'required|date_format:H:i',
+            'fournisseur_id' => 'required|exists:fournisseurs,id',
+            'site_collecte_id' => 'required|exists:site_collectes,id',
+            'utilisateur_id' => 'required|exists:utilisateurs,id',
+            'poids_brut' => 'required|numeric|min:0',
+            'poids_agreer' => 'nullable|numeric|min:0',
+            'taux_humidite' => 'nullable|numeric|min:0|max:100',
+            'taux_dessiccation' => 'nullable|numeric|min:0|max:100',
+            'type_emballage' => 'nullable|in:sac,bidon,fut',
+            'poids_emballage' => 'nullable|numeric|min:0',
+            'nombre_colisage' => 'nullable|integer|min:0',
+            'prix_unitaire' => 'nullable|numeric|min:0',
+            'prix_total' => 'nullable|numeric|min:0'
+        ]);
 
-            // VÉRIFICATION PAIEMENT EN AVANCE
-            $paiementEnAttente = PayementAvance::where('fournisseur_id', $validated['fournisseur_id'])
-                ->where('statut', 'en_attente')
-                ->exists();
+        // VÉRIFICATION PAIEMENT EN AVANCE
+        $paiementEnAttente = PayementAvance::where('fournisseur_id', $validated['fournisseur_id'])
+            ->where('statut', 'en_attente')
+            ->exists();
 
-            if ($paiementEnAttente) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Impossible de créer la fiche : Ce fournisseur a un paiement en avance en attente de confirmation'
-                ], 400);
-            }
-
-            if ($user->role !== 'admin' && $validated['utilisateur_id'] != $user->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Vous ne pouvez créer des fiches que pour votre propre compte'
-                ], 403);
-            }
-
-            $numeroDocument = 'REC-' . date('Ymd') . '-' . Str::upper(Str::random(6));
-
-            // CALCUL DU POIDS NET
-            $poidsNet = $this->calculerPoidsNet($request);
-            $poidsAgreer = $validated['poids_agreer'] ?? $poidsNet;
-
-            // CALCUL DU PRIX TOTAL
-            $prixTotal = $validated['prix_total'] ?? null;
-            if (empty($prixTotal) && !empty($validated['prix_unitaire'])) {
-                $prixTotal = $poidsNet * $validated['prix_unitaire'];
-            }
-
-            // LOGIQUE D'UTILISATION DES PAIEMENTS D'AVANCE
-            $paiementsUtilises = [];
-            $totalPaiementsUtilises = 0;
-            
-            // Le statut reste toujours "en attente de teste" quel que soit le paiement
-            $statutFiche = 'en attente de teste';
-
-            if ($prixTotal > 0) {
-                // Récupérer UN SEUL paiement disponible (le premier arrivé)
-                $paiementDisponible = PayementAvance::where('fournisseur_id', $validated['fournisseur_id'])
-                    ->where('statut', 'arrivé')
-                    ->where('montant_restant', '>', 0)
-                    ->orderBy('date', 'asc')
-                    ->first();
-
-                if ($paiementDisponible) {
-                    // Calculer combien utiliser de ce paiement
-                    $montantDisponiblePaiement = $paiementDisponible->montant_restant;
-                    $montantAUtiliser = min($montantDisponiblePaiement, $prixTotal);
-                    
-                    if ($montantAUtiliser > 0) {
-                        $nouveauMontantUtilise = $paiementDisponible->montant_utilise + $montantAUtiliser;
-                        $nouveauMontantRestant = $paiementDisponible->montant - $nouveauMontantUtilise;
-                        $nouveauStatutPaiement = ($nouveauMontantRestant == 0) ? 'utilise' : 'arrivé';
-                        
-                        $paiementDisponible->update([
-                            'montant_utilise' => $nouveauMontantUtilise,
-                            'montant_restant' => $nouveauMontantRestant,
-                            'fiche_reception_id' => null, // On mettra à jour après création de la fiche
-                            'date_utilisation' => now(),
-                            'statut' => $nouveauStatutPaiement
-                        ]);
-                        
-                        $paiementsUtilises[] = [
-                            'paiement' => $paiementDisponible,
-                            'montant_utilise' => $montantAUtiliser,
-                            'montant_restant_apres' => $nouveauMontantRestant
-                        ];
-                        
-                        $totalPaiementsUtilises = $montantAUtiliser;
-                    }
-                }
-            }
-
-            // Créer la fiche de réception
-            $fiche = FicheReception::create([
-                'numero_document' => $numeroDocument,
-                'date_reception' => $validated['date_reception'],
-                'heure_reception' => $validated['heure_reception'],
-                'fournisseur_id' => $validated['fournisseur_id'],
-                'site_collecte_id' => $validated['site_collecte_id'],
-                'utilisateur_id' => $validated['utilisateur_id'],
-                'poids_brut' => $validated['poids_brut'],
-                'poids_agreer' => $poidsAgreer,
-                'taux_humidite' => $validated['taux_humidite'] ?? null,
-                'taux_dessiccation' => $validated['taux_dessiccation'] ?? null,
-                'poids_net' => $poidsNet,
-                'type_emballage' => $validated['type_emballage'] ?? null,
-                'poids_emballage' => $validated['poids_emballage'] ?? null,
-                'nombre_colisage' => $validated['nombre_colisage'] ?? null,
-                'prix_unitaire' => $validated['prix_unitaire'] ?? null,
-                'prix_total' => $prixTotal,
-                'statut' => $statutFiche // Toujours "en attente de teste"
-            ]);
-
-            // Maintenant mettre à jour les paiements avec l'ID de la fiche créée
-            foreach ($paiementsUtilises as $item) {
-                $paiement = $item['paiement'];
-                $paiement->update(['fiche_reception_id' => $fiche->id]);
-            }
-
-            DB::commit();
-
-            $fiche->load(['fournisseur', 'siteCollecte', 'utilisateur']);
-
-            // Préparer le message de réponse
-            $messagePaiements = '';
-            if ($prixTotal > 0) {
-                if ($totalPaiementsUtilises > 0) {
-                    $resteAPayer = $prixTotal - $totalPaiementsUtilises;
-                    if ($resteAPayer > 0) {
-                        $messagePaiements = '✅ Paiement en avance utilisé: ' . number_format($totalPaiementsUtilises, 0, ',', ' ') . 
-                                          ' Ar. Reste à payer: ' . number_format($resteAPayer, 0, ',', ' ') . ' Ar';
-                    } else {
-                        $messagePaiements = '✅ Paiement en avance utilisé entièrement pour couvrir le prix total';
-                    }
-                } else {
-                    $messagePaiements = 'ℹ️ Aucun paiement en avance disponible, prix total à payer: ' . 
-                                      number_format($prixTotal, 0, ',', ' ') . ' Ar';
-                }
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Fiche de réception créée avec succès',
-                'data' => $fiche,
-                'calculs' => [
-                    'poids_net_calcule' => $poidsNet,
-                    'prix_total_calcule' => $prixTotal,
-                    'paiement_avance_utilise' => $totalPaiementsUtilises,
-                    'reste_a_payer' => $prixTotal > 0 ? max(0, $prixTotal - $totalPaiementsUtilises) : 0,
-                    'details_paiement' => !empty($paiementsUtilises) ? [
-                        'id' => $paiementsUtilises[0]['paiement']->id,
-                        'reference' => $paiementsUtilises[0]['paiement']->reference,
-                        'montant_total' => $paiementsUtilises[0]['paiement']->montant,
-                        'montant_utilise_avant' => $paiementsUtilises[0]['paiement']->montant_utilise - $paiementsUtilises[0]['montant_utilise'],
-                        'montant_utilise_ce_fiche' => $paiementsUtilises[0]['montant_utilise'],
-                        'montant_utilise_total' => $paiementsUtilises[0]['paiement']->montant_utilise,
-                        'montant_restant' => $paiementsUtilises[0]['paiement']->montant_restant,
-                        'type' => $paiementsUtilises[0]['paiement']->type,
-                        'statut' => $paiementsUtilises[0]['paiement']->statut
-                    ] : null,
-                    'message_paiements' => $messagePaiements
-                ]
-            ], 201);
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollBack();
+        if ($paiementEnAttente) {
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur de validation',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors de la création de la fiche',
-                'error' => $e->getMessage()
-            ], 500);
+                'message' => 'Impossible de créer la fiche : Ce fournisseur a un paiement en avance en attente de confirmation'
+            ], 400);
         }
+
+        if ($user->role !== 'admin' && $validated['utilisateur_id'] != $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous ne pouvez créer des fiches que pour votre propre compte'
+            ], 403);
+        }
+
+        $numeroDocument = 'REC-' . date('Ymd') . '-' . Str::upper(Str::random(6));
+
+        // CALCUL DU POIDS NET
+        $poidsNet = $this->calculerPoidsNet($request);
+        $poidsAgreer = $validated['poids_agreer'] ?? $poidsNet;
+
+        // CALCUL DU PRIX TOTAL INITIAL
+        $prixTotalInitial = $validated['prix_total'] ?? null;
+        if (empty($prixTotalInitial) && !empty($validated['prix_unitaire'])) {
+            $prixTotalInitial = $poidsNet * $validated['prix_unitaire'];
+        }
+
+        // LOGIQUE D'UTILISATION DES PAIEMENTS D'AVANCE
+        $paiementsUtilises = [];
+        $totalPaiementsUtilises = 0;
+        $prixTotalFinal = $prixTotalInitial ?? 0; // Initialiser le prix total final
+        
+        // Le statut reste toujours "en attente de teste" quel que soit le paiement
+        $statutFiche = 'en attente de teste';
+
+        if ($prixTotalInitial > 0) {
+            // Récupérer UN SEUL paiement disponible (le premier arrivé)
+            $paiementDisponible = PayementAvance::where('fournisseur_id', $validated['fournisseur_id'])
+                ->where('statut', 'arrivé')
+                ->where('montant_restant', '>', 0)
+                ->orderBy('date', 'asc')
+                ->first();
+
+            if ($paiementDisponible) {
+                // Calculer combien utiliser de ce paiement
+                $montantDisponiblePaiement = $paiementDisponible->montant_restant;
+                $montantAUtiliser = min($montantDisponiblePaiement, $prixTotalInitial);
+                
+                if ($montantAUtiliser > 0) {
+                    $nouveauMontantUtilise = $paiementDisponible->montant_utilise + $montantAUtiliser;
+                    $nouveauMontantRestant = $paiementDisponible->montant - $nouveauMontantUtilise;
+                    $nouveauStatutPaiement = ($nouveauMontantRestant == 0) ? 'utilise' : 'arrivé';
+                    
+                    $paiementDisponible->update([
+                        'montant_utilise' => $nouveauMontantUtilise,
+                        'montant_restant' => $nouveauMontantRestant,
+                        'fiche_reception_id' => null, // On mettra à jour après création de la fiche
+                        'date_utilisation' => now(),
+                        'statut' => $nouveauStatutPaiement
+                    ]);
+                    
+                    $paiementsUtilises[] = [
+                        'paiement' => $paiementDisponible,
+                        'montant_utilise' => $montantAUtiliser,
+                        'montant_restant_apres' => $nouveauMontantRestant
+                    ];
+                    
+                    $totalPaiementsUtilises = $montantAUtiliser;
+                    
+                    // IMPORTANT : Calculer le prix total final après déduction du paiement
+                    $prixTotalFinal = max(0, $prixTotalInitial - $montantAUtiliser);
+                }
+            }
+        }
+
+        // Créer la fiche de réception avec le prix total ajusté
+        $fiche = FicheReception::create([
+            'numero_document' => $numeroDocument,
+            'date_reception' => $validated['date_reception'],
+            'heure_reception' => $validated['heure_reception'],
+            'fournisseur_id' => $validated['fournisseur_id'],
+            'site_collecte_id' => $validated['site_collecte_id'],
+            'utilisateur_id' => $validated['utilisateur_id'],
+            'poids_brut' => $validated['poids_brut'],
+            'poids_agreer' => $poidsAgreer,
+            'taux_humidite' => $validated['taux_humidite'] ?? null,
+            'taux_dessiccation' => $validated['taux_dessiccation'] ?? null,
+            'poids_net' => $poidsNet,
+            'type_emballage' => $validated['type_emballage'] ?? null,
+            'poids_emballage' => $validated['poids_emballage'] ?? null,
+            'nombre_colisage' => $validated['nombre_colisage'] ?? null,
+            'prix_unitaire' => $validated['prix_unitaire'] ?? null,
+            'prix_total' => $prixTotalFinal, // Prix total ajusté selon paiement utilisé
+            'statut' => $statutFiche // Toujours "en attente de teste"
+        ]);
+
+        // Maintenant mettre à jour les paiements avec l'ID de la fiche créée
+        foreach ($paiementsUtilises as $item) {
+            $paiement = $item['paiement'];
+            $paiement->update(['fiche_reception_id' => $fiche->id]);
+        }
+
+        DB::commit();
+
+        $fiche->load(['fournisseur', 'siteCollecte', 'utilisateur']);
+
+        // Préparer le message de réponse
+        $messagePaiements = '';
+        $resteAPayer = $prixTotalFinal;
+        
+        if ($prixTotalInitial > 0) {
+            if ($totalPaiementsUtilises > 0) {
+                if ($prixTotalFinal > 0) {
+                    $messagePaiements = '✅ Paiement en avance utilisé: ' . number_format($totalPaiementsUtilises, 0, ',', ' ') . 
+                                      ' Ar. Reste à payer: ' . number_format($prixTotalFinal, 0, ',', ' ') . ' Ar';
+                } else {
+                    $messagePaiements = '✅ Paiement en avance utilisé entièrement - Fiche entièrement payée';
+                }
+            } else {
+                $messagePaiements = 'ℹ️ Aucun paiement en avance disponible, prix total à payer: ' . 
+                                  number_format($prixTotalInitial, 0, ',', ' ') . ' Ar';
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Fiche de réception créée avec succès',
+            'data' => $fiche,
+            'calculs' => [
+                'poids_net_calcule' => $poidsNet,
+                'prix_total_initial' => $prixTotalInitial, // Prix total avant paiement
+                'prix_total_final' => $prixTotalFinal, // Prix total après paiement
+                'paiement_avance_utilise' => $totalPaiementsUtilises,
+                'reste_a_payer' => $prixTotalFinal,
+                'details_paiement' => !empty($paiementsUtilises) ? [
+                    'id' => $paiementsUtilises[0]['paiement']->id,
+                    'reference' => $paiementsUtilises[0]['paiement']->reference,
+                    'montant_total' => $paiementsUtilises[0]['paiement']->montant,
+                    'montant_utilise_avant' => $paiementsUtilises[0]['paiement']->montant_utilise - $paiementsUtilises[0]['montant_utilise'],
+                    'montant_utilise_ce_fiche' => $paiementsUtilises[0]['montant_utilise'],
+                    'montant_utilise_total' => $paiementsUtilises[0]['paiement']->montant_utilise,
+                    'montant_restant' => $paiementsUtilises[0]['paiement']->montant_restant,
+                    'type' => $paiementsUtilises[0]['paiement']->type,
+                    'statut' => $paiementsUtilises[0]['paiement']->statut
+                ] : null,
+                'message_paiements' => $messagePaiements
+            ]
+        ], 201);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        DB::rollBack();
+        return response()->json([
+            'success' => false,
+            'message' => 'Erreur de validation',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json([
+            'success' => false,
+            'message' => 'Erreur lors de la création de la fiche',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 
     public function show($id)
     {
