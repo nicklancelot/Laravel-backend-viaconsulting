@@ -30,9 +30,9 @@ use App\Http\Controllers\TransfertController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-            // Routes publiques
-            Route::post('/register', [AuthController::class, 'register']);
-            Route::post('/login', [AuthController::class, 'login']);
+            // Routes pub
+        Route::post('/register', [AuthController::class, 'register']);
+        Route::post('/login', [AuthController::class, 'login']);
 
     Route::prefix('localisations')->group(function () {
             Route::get('/', [LocalisationController::class, 'index']);
