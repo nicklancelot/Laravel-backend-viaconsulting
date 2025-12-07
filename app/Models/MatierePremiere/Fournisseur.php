@@ -15,6 +15,7 @@ class Fournisseur extends Model
         'nom',
         'prenom',
         'adresse',
+        'cin',
         'identification_fiscale',
         'localisation_id',
         'contact',

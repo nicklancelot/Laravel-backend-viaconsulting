@@ -45,6 +45,7 @@ class FournisseurController extends Controller
                 'nom' => 'nullable|string|max:100',
                 'prenom' => 'nullable|string|max:100',
                 'adresse' => 'nullable|string|max:255',
+                'cin' => 'nullable|string|max:20',
                 'identification_fiscale' => 'nullable|string|max:50|unique:fournisseurs',
                 'localisation_id' => 'nullable|exists:localisations,id',
                 'contact' => 'nullable|string|max:20'
@@ -123,6 +124,7 @@ class FournisseurController extends Controller
                 'nom' => 'nullable|string|max:100',
                 'prenom' => 'nullable|string|max:100',
                 'adresse' => 'nullable|string|max:255',
+                'cin' => 'nullable|string|max:20',
                 'identification_fiscale' => 'nullable|string|max:50|unique:fournisseurs,identification_fiscale,' . $fournisseur->id,
                 'localisation_id' => 'nullable|exists:localisations,id',
                 'contact' => 'nullable|string|max:20'
