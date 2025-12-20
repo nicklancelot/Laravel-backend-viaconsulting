@@ -17,9 +17,12 @@ class Utilisateur extends Authenticatable
         'prenom',
         'numero',
         'localisation_id',
+        'site_collecte_id', 
         'CIN',
         'role',
-        'password'
+        'password',
+        'code_collecteur'
+        
     ];
 
     protected $hidden = [
@@ -32,4 +35,9 @@ class Utilisateur extends Authenticatable
         return $this->belongsTo(Localisation::class);
     }
 
+    // Ajout de la relation avec site_collecte
+    public function siteCollecte(): BelongsTo
+    {
+        return $this->belongsTo(SiteCollecte::class, 'site_collecte_id');
+    }
 }

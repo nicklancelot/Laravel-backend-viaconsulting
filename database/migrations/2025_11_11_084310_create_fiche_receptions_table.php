@@ -26,6 +26,8 @@ return new class extends Migration
             $table->integer('nombre_colisage')->nullable();
             $table->decimal('prix_unitaire', 10, 2)->nullable();
             $table->decimal('prix_total', 12, 2)->nullable();
+            $table->decimal('quantite_totale', 10, 2)->nullable();
+            $table->decimal('quantite_restante', 10, 2)->nullable(); // Mis à jour après chaque livraison
             $table->enum('statut', [ 
                 //Fiche-livraison
                 'en attente de teste',
@@ -43,7 +45,8 @@ return new class extends Migration
                 'En attente de livraison',
                 'en cours de livraison',    
                 //livraisom
-                'livré'       
+                'livré',
+                'partiellement_livre'  
             ])->default('en attente de teste');
             $table->timestamps();
         });

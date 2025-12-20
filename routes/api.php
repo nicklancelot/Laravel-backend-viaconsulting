@@ -4,6 +4,11 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CaissierController;
 use App\Http\Controllers\DemandeSoldeController;
 use App\Http\Controllers\DestinateurControlleur;
+use App\Http\Controllers\Distillation\DistillationController;
+use App\Http\Controllers\Distillation\ExpeditionController;
+use App\Http\Controllers\Distillation\GestionSoldeController;
+use App\Http\Controllers\Distillation\StatistiqueController;
+use App\Http\Controllers\Distillation\TransportController;
 use App\Http\Controllers\LivreurControlleur;
 use App\Http\Controllers\LocalisationController;
 use App\Http\Controllers\MatierePremiere\FacturationController;
@@ -13,6 +18,7 @@ use App\Http\Controllers\MatierePremiere\ImpayeController;
 use App\Http\Controllers\MatierePremiere\LivraisonController;
 use App\Http\Controllers\MatierePremiere\PVReceptionController;
 use App\Http\Controllers\MatierePremiere\StockController;
+use App\Http\Controllers\MatierePremiere\StockPvReceptionController;
 use App\Http\Controllers\PayementEnAvanceController;
 use App\Http\Controllers\ProvenancesController;
 use App\Http\Controllers\SiteCollecteController;
@@ -26,20 +32,29 @@ use App\Http\Controllers\TestHuille\HEFicheLivraisonController;
 use App\Http\Controllers\TestHuille\HEImpayeController;
 use App\Http\Controllers\TestHuille\HETesterController;
 use App\Http\Controllers\TestHuille\HEValidationController;
+use App\Http\Controllers\TestHuille\StockheController;
 use App\Http\Controllers\TransfertController;
+use App\Http\Controllers\Vente\ReceptionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-            // Routes pub
-        Route::post('/register', [AuthController::class, 'register']);
-        Route::post('/login', [AuthController::class, 'login']);
 
+    
+
+// ==================================================
+// ROUTES PUBLIQUES (Accessibles sans authentification)
+// ==================================================
+
+    // Authentification
+            Route::post('/register', [AuthController::class, 'register']);
+            Route::post('/login', [AuthController::class, 'login']);
+    // localisations
     Route::prefix('localisations')->group(function () {
             Route::get('/', [LocalisationController::class, 'index']);
             Route::get('/{localisation}', [LocalisationController::class, 'show']);
             Route::delete('/{localisation}', [LocalisationController::class, 'destroy']);
     });
-
+     // provenances
     Route::prefix('provenances')->group(function () {
             Route::get('/', [ProvenancesController::class, 'index']);
             Route::post('/', [ProvenancesController::class, 'store']);
@@ -47,7 +62,7 @@ use Illuminate\Support\Facades\Route;
             Route::put('/{provenance}', [ProvenancesController::class, 'update']);
             Route::delete('/{provenance}', [ProvenancesController::class, 'destroy']);
     });
-
+    //site-collectes
     Route::prefix('site-collectes')->group(function () {
             Route::get('/', [SiteCollecteController::class, 'index']);
             Route::post('/', [SiteCollecteController::class, 'store']);
@@ -56,18 +71,19 @@ use Illuminate\Support\Facades\Route;
             Route::delete('/{siteCollecte}', [SiteCollecteController::class, 'destroy']);
     });
 
-            // Nouvelle route pour la vérification admin
+    //verification mot de passe admin   
             Route::post('/verify-admin', [AuthController::class, 'verifyAdmin']);
 
 Route::middleware('auth:sanctum')->group(function () {
+    //Authentification
             Route::post('/logout', [AuthController::class, 'logout']);
             Route::get('/user', [AuthController::class, 'user']);
-    
+    //Authentification
     Route::prefix('localisations')->group(function () {
             Route::post('/', [LocalisationController::class, 'store']);
             Route::put('/{localisation}', [LocalisationController::class, 'update']);
     });
-
+    //Caissier
     Route::prefix('caissiers')->group(function () {
             Route::get('/', [CaissierController::class, 'index']);
             Route::post('/', [CaissierController::class, 'store']);
@@ -89,22 +105,31 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/utilisateurs/{id}', [TransfertController::class, 'getUtilisateur']);
             Route::get('/solde-actuel', [TransfertController::class, 'getSoldeActuel']);
 
-    // Routes pour les demandes de solde
-    Route::prefix('demande-soldes')->group(function () {
-            Route::get('/', [DemandeSoldeController::class, 'index']);
-            Route::post('/', [DemandeSoldeController::class, 'store']);
-            Route::get('/{id}', [DemandeSoldeController::class, 'show']);
-            Route::put('/{id}/statut', [DemandeSoldeController::class, 'updateStatut']);
-            Route::delete('/{id}', [DemandeSoldeController::class, 'destroy']);
-            Route::get('/utilisateur/{utilisateur_id}', [DemandeSoldeController::class, 'mesDemandes']);
-            Route::get('/statut/en-attente', [DemandeSoldeController::class, 'demandesEnAttente']);
-            Route::get('/statistiques', [DemandeSoldeController::class, 'statistiques']);
-    });
+        // Routes pour les demandes de solde
+        Route::prefix('demande-soldes')->group(function () {
+        Route::get('/', [DemandeSoldeController::class, 'index']);
+        Route::post('/', [DemandeSoldeController::class, 'store']);
+        Route::get('/{id}', [DemandeSoldeController::class, 'show']);
+        Route::put('/{id}/statut', [DemandeSoldeController::class, 'updateStatut']);
+        Route::delete('/{id}', [DemandeSoldeController::class, 'destroy']);
+        Route::get('/utilisateur/{utilisateur_id}', [DemandeSoldeController::class, 'mesDemandes']);
+        Route::get('/statut/en-attente', [DemandeSoldeController::class, 'demandesEnAttente']);
+        Route::get('/statistiques', [DemandeSoldeController::class, 'statistiques']);
+        
+        //  routes pour la gestion des états lu/non lu
+        Route::put('/{id}/lu-utilisateur', [DemandeSoldeController::class, 'marquerCommeLuParUtilisateur']);
+        Route::put('/{id}/lu-admin', [DemandeSoldeController::class, 'marquerCommeLuParAdmin']);
+        Route::put('/{id}/reinitialiser-lu', [DemandeSoldeController::class, 'reinitialiserLu']);
+        Route::get('/non-lues/{userId}/{role}', [DemandeSoldeController::class, 'getNonLues']);
+        Route::put('/toutes-lues-utilisateur/{utilisateur_id}', [DemandeSoldeController::class, 'marquerToutesLuesParUtilisateur']);
+        Route::put('/toutes-lues-admin', [DemandeSoldeController::class, 'marquerToutesLuesParAdmin']);
+        });
 
     // Utilisateurs - toutes les routes protégées
     Route::prefix('utilisateurs')->group(function () {
             Route::get('/', [UtilisateurController::class, 'index']);
             Route::post('/', [UtilisateurController::class, 'store']);
+            Route::get('/sites/collecte', [UtilisateurController::class, 'getSitesCollecte']);
             Route::get('/{utilisateur}', [UtilisateurController::class, 'show']);
             Route::put('/{utilisateur}', [UtilisateurController::class, 'update']);
             Route::delete('/{utilisateur}', [UtilisateurController::class, 'destroy']);
@@ -127,7 +152,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/retard/en-retard', [PayementEnAvanceController::class, 'getPaiementsEnRetard']);
      
     });
-
+    //fournisseurs
     Route::prefix('fournisseurs')->group(function () {
             Route::get('/', [FournisseurController::class, 'index']);
             Route::post('/', [FournisseurController::class, 'store']);
@@ -136,7 +161,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{fournisseur}', [FournisseurController::class, 'destroy']);
             Route::get('/search/{search}', [FournisseurController::class, 'search']);
     });
-
+    //pv-receptions
     Route::prefix('pv-receptions')->group(function () {
             Route::get('/', [PVReceptionController::class, 'index']);
             Route::post('/', [PVReceptionController::class, 'store']);
@@ -147,7 +172,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/fournisseur/{fournisseur_id}', [PVReceptionController::class, 'getInfosFournisseur']);
        
     });
-
+    //facturations PV  receptions
     Route::prefix('facturations')->group(function () {
             Route::get('/', [FacturationController::class, 'index']);
             Route::post('/', [FacturationController::class, 'store']);
@@ -156,7 +181,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id}/paiement', [FacturationController::class, 'enregistrerPaiement']);
     });
 
-    // Routes pour les impayés
+    // Routes pour les impayés pv reception
     Route::prefix('impayes')->group(function () {
             Route::get('/', [ImpayeController::class, 'index']);
             Route::post('/', [ImpayeController::class, 'store']);
@@ -165,20 +190,21 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id}/paiement', [ImpayeController::class, 'enregistrerPaiement']);
     });
 
-    // Routes pour fiches de livraison
-    Route::prefix('fiche-livraisons')->group(function () {
-            Route::get('/', [FicheLivraisonController::class, 'index']);
-            Route::post('/', [FicheLivraisonController::class, 'store']);
-            Route::get('/{id}', [FicheLivraisonController::class, 'show']);
-            Route::post('/{id}/livrer', [FicheLivraisonController::class, 'livrer']); 
-            Route::post('/{id}/livrer-partielle', [FicheLivraisonController::class, 'livrerPartielle']);
-    });
+    // Routes pour fiches de livraison pv reception
+        Route::prefix('fiche-livraisons')->group(function () {
+        Route::get('/', [FicheLivraisonController::class, 'index']);
+        Route::post('/', [FicheLivraisonController::class, 'store']);
+        Route::get('/{id}', [FicheLivraisonController::class, 'show']);
+        Route::get('/distillateurs/disponibles', [FicheLivraisonController::class, 'getDistillateurs']);
+        Route::get('/site-collecte/{nom}', [FicheLivraisonController::class, 'getBySiteCollecte']);
+        });
+  // Routes pour stat fiche de livraison pv reception
     Route::prefix('fiche-statistique')->group(function () {
-            Route::get('/', [statController::class, 'index']);
+        Route::get('/', [statController::class, 'index']);
 
     });
 
-    // Routes pour livraisons (confirmation)
+    // Routes pour livraisons (confirmation) : ty fa tsy miasa angamba @zao
     Route::prefix('livraisons')->group(function () {
             Route::get('/', [LivraisonController::class, 'index']);
             Route::get('/{id}', [LivraisonController::class, 'show']);
@@ -189,7 +215,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/historique', [StockController::class, 'getHistoriqueMouvements']);
             Route::get('/tendances', [StockController::class, 'getTendancesStock']);
     });
-
+    //route fiche de reception huille Ess
     Route::prefix('fiche-receptions')->group(function () {
             Route::get('/', [FicheReceptionController::class, 'index']);
             Route::post('/', [FicheReceptionController::class, 'store']);
@@ -199,7 +225,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/fournisseur/{fournisseur_id}', [FicheReceptionController::class, 'getInfosFournisseur']);
     });
 
-    // Routes pour les tests
+    // Routes pour les tests huile
      Route::prefix('tests')->group(function () {
             Route::get('/', [HETesterController::class, 'index']);
             Route::post('/', [HETesterController::class, 'store']);
@@ -209,7 +235,7 @@ Route::middleware('auth:sanctum')->group(function () {
     
     });
 
-    // Routes pour les validations
+    // Routes pour les validations teste huile
     Route::prefix('validations')->group(function () {
             Route::get('/', [HEValidationController::class, 'index']);
             Route::post('/', [HEValidationController::class, 'store']);
@@ -219,7 +245,7 @@ Route::middleware('auth:sanctum')->group(function () {
         
     });
 
-    // Routes pour la facturation
+    // Routes pour la facturation Huille Ess
     Route::prefix('/he-facturations')->group(function () {
             Route::get('/', [HEFacturationController::class, 'index']);
             Route::post('/', [HEFacturationController::class, 'store']);
@@ -232,20 +258,21 @@ Route::middleware('auth:sanctum')->group(function () {
             
     });
 
-    // Routes pour les fiches de livraison (CRUD complet)
+    // Routes pour les fiches de livraison
     Route::prefix('he-fiche-livraisons')->group(function () {
             Route::get('/', [HEFicheLivraisonController::class, 'index']);
             Route::post('/', [HEFicheLivraisonController::class, 'store']);
             Route::get('/livreurs', [HEFicheLivraisonController::class, 'getLivreurs']);
-            Route::get('/destinateurs', [HEFicheLivraisonController::class, 'getDestinateurs']);
+            Route::get('/destinateurs', [HEFicheLivraisonController::class, 'getVendeurs']);
             Route::get('/{id}', [HEFicheLivraisonController::class, 'show']);
             Route::put('/{id}', [HEFicheLivraisonController::class, 'update']);
             Route::delete('/{id}', [HEFicheLivraisonController::class, 'destroy']);
             Route::get('/fiche/{fiche_reception_id}', [HEFicheLivraisonController::class, 'getByFicheReception']);
+            Route::post('/{id}/annuler', [HEFicheLivraisonController::class, 'annulerLivraison']);
 
     });
 
-    // Routes pour la gestion des livraisons
+    // Routes pour la gestion des livraisons Huille Essentiel
     Route::prefix('he-livraisons')->group(function () {
             Route::post('/{fiche_reception_id}/demarrer', [HELivraisonController::class, 'demarrerLivraison']);
             Route::post('/{fiche_reception_id}/terminer', [HELivraisonController::class, 'terminerLivraison']);
@@ -253,7 +280,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/en-cours', [HELivraisonController::class, 'getEnCoursLivraison']);
             Route::get('/livrees', [HELivraisonController::class, 'getLivrees']);
     });
-
+    //Route pour impayee Huille Essentiel
     Route::prefix('he-impayes')->group(function () {
             Route::get('/', [HEImpayeController::class, 'index']);
             Route::post('/', [HEImpayeController::class, 'store']);
@@ -262,7 +289,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{id}', [HEImpayeController::class, 'update']);
             Route::delete('/{id}', [HEImpayeController::class, 'destroy']);
     });
-
+    //Route pour livreurs
     Route::prefix('livreurs')->group(function () {
             Route::get('/', [LivreurControlleur::class, 'index']);
             Route::post('/', [LivreurControlleur::class, 'store']);
@@ -281,4 +308,72 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{id}', [DestinateurControlleur::class, 'destroy']);
             Route::get('/utilisateur/{userId}', [DestinateurControlleur::class, 'getByUser']);
     });
+    //Route expedition (get manka aza rehetra de receptionner efa kop elaa)
+        Route::prefix('expeditions')->group(function () {
+        Route::get('/', [ExpeditionController::class, 'index']);
+        Route::post('/{expeditionId}/receptionner', [ExpeditionController::class, 'marquerReceptionne']);
+        });
+    //Route distillations 
+        Route::prefix('distillations')->group(function () {
+        Route::get('/', [DistillationController::class, 'index']);
+        Route::post('/{distillationId}/demarrer', [DistillationController::class, 'demarrerDistillation']);
+        Route::post('/{distillationId}/terminer', [DistillationController::class, 'terminerDistillation']);
+        });
+    //Transport 
+    Route::prefix('transports')->group(function () {
+        
+            Route::get('/distillations-sans-transport', [TransportController::class, 'getDistillationsSansTransport']);
+            Route::get('/vendeurs-disponibles', [TransportController::class, 'getVendeursDisponibles']);
+            Route::get('/livreurs-disponibles', [TransportController::class, 'getLivreursDisponibles']);
+
+            Route::post('/creer', [TransportController::class, 'creerTransport']);
+            Route::get('/en-cours', [TransportController::class, 'getTransportsEnCours']);
+            Route::get('/livre', [TransportController::class, 'getTransportsLivre']);
+            Route::post('/{transportId}/livre', [TransportController::class, 'marquerLivre']);
+            Route::get('/mes-transports', [TransportController::class, 'getMesTransports']);
+    });
+
+
+
+        Route::prefix('matiere-premiere/stock')->group(function () {
+        Route::get('/', [StockPvReceptionController::class, 'getEtatStock']);
+
+        });
+
+        Route::prefix('stock-he')->group(function () {
+        Route::get('/', [StockheController::class, 'getEtatStock']);
+        Route::post('/verifier', [StockheController::class, 'verifierDisponibilite']);
+        });
+
+        // Dans routes/api.php
+        Route::prefix('receptions')->group(function () {
+        Route::get('/', [ReceptionController::class, 'index']);
+        Route::post('/', [ReceptionController::class, 'store']);
+        Route::get('/statut/{statut}', [ReceptionController::class, 'getByStatut']);
+        Route::get('/fiche-livraison/{ficheLivraisonId}', [ReceptionController::class, 'getByFicheLivraison']);
+        Route::get('/transport/{transportId}', [ReceptionController::class, 'getByTransport']);
+        Route::get('/mes-receptions', [ReceptionController::class, 'getMesReceptions']);
+        Route::get('/{id}', [ReceptionController::class, 'show']);
+        Route::put('/{id}', [ReceptionController::class, 'update']);
+        Route::delete('/{id}', [ReceptionController::class, 'destroy']);
+        Route::post('/{id}/marquer-receptionne', [ReceptionController::class, 'marquerReceptionne']);
+        Route::post('/{id}/annuler', [ReceptionController::class, 'marquerAnnule']);
+        });
+
+      
+        Route::prefix('distillation-stat')->group(function () {
+        // Statistiques
+        Route::get('/', [StatistiqueController::class, 'index']);
+        Route::post('/statistiques/par-periode', [StatistiqueController::class, 'parPeriode']);
+        });
+
+ 
+        // Routes pour la gestion des soldes distillation
+        Route::prefix('gestion-solde-distilleur')->group(function () {
+        Route::post('/retrait', [GestionSoldeController::class, 'retrait']);
+        Route::get('/mon-solde', [GestionSoldeController::class, 'monSolde']);
+        Route::get('/historique-retraits', [GestionSoldeController::class, 'historiqueRetraits']);
+        Route::get('/detail-retrait/{id}', [GestionSoldeController::class, 'detailRetrait']);
+        });
+
 });

@@ -14,7 +14,9 @@ class DemandeSolde extends Model
         'statut',
         'admin_id',
         'commentaire_admin',
-        'date'
+        'date',
+        'lu_par_utilisateur',
+        'lu_par_admin'
     ];
 
 

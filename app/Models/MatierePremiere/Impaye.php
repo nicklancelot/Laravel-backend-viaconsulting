@@ -9,7 +9,7 @@ class Impaye extends Model
 {
     protected $fillable = [
         'pv_reception_id',
-        'date_facturation', // ✅ Ajout pour cohérence avec la table
+        'date_facturation', 
         'date_paiement',
         'numero_facture',
         'mode_paiement',

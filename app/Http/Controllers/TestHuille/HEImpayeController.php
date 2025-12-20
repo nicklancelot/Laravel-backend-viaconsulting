@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\TestHuille\HEImpaye;
 use App\Models\TestHuille\HEFacturation;
 use App\Models\TestHuille\FicheReception;
+use App\Models\TestHuille\Stockhe;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -45,124 +46,116 @@ class HEImpayeController extends Controller
      */
   // Dans HEImpayeController.php - méthode store
 public function store(Request $request)
-{
-    try {
-        DB::beginTransaction();
+    {
+        try {
+            DB::beginTransaction();
 
-        $validated = $request->validate([
-            'facturation_id' => 'required|exists:h_e_facturations,id',
-            'montant_paye' => 'required|numeric|min:0'
-        ]);
+            $validated = $request->validate([
+                'facturation_id' => 'required|exists:h_e_facturations,id',
+                'montant_paye' => 'required|numeric|min:0'
+            ]);
 
-        // Vérifier si la facturation existe
-        $facturation = HEFacturation::with('ficheReception')->find($validated['facturation_id']);
-        if (!$facturation) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Facturation non trouvée'
-            ], 404);
-        }
+            $facturation = HEFacturation::with('ficheReception')->find($validated['facturation_id']);
+            if (!$facturation) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Facturation non trouvée'
+                ], 404);
+            }
 
-        // Vérifier que la facturation a un reste à payer
-        if ($facturation->reste_a_payer <= 0) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cette facturation est déjà entièrement payée'
-            ], 400);
-        }
+            if ($facturation->reste_a_payer <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cette facturation est déjà entièrement payée'
+                ], 400);
+            }
 
-        // Vérifier que le montant payé ne dépasse pas le reste à payer
-        if ($validated['montant_paye'] > $facturation->reste_a_payer) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Le montant payé ne peut pas dépasser le reste à payer (' . $facturation->reste_a_payer . ')'
-            ], 400);
-        }
+            if ($validated['montant_paye'] > $facturation->reste_a_payer) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Le montant payé ne peut pas dépasser le reste à payer'
+                ], 400);
+            }
 
-        // VÉRIFICATION SOLDE UTILISATEUR
-        $soldeUser = \App\Models\SoldeUser::where('utilisateur_id', $facturation->ficheReception->utilisateur_id)->first();
-        $soldeActuel = $soldeUser ? $soldeUser->solde : 0;
+            // VÉRIFICATION SOLDE UTILISATEUR
+            $soldeUser = \App\Models\SoldeUser::where('utilisateur_id', $facturation->ficheReception->utilisateur_id)->first();
+            $soldeActuel = $soldeUser ? $soldeUser->solde : 0;
 
-        if ($soldeActuel < $validated['montant_paye']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Solde utilisateur insuffisant. Solde disponible: ' . number_format($soldeActuel, 0, ',', ' ') . ' Ar - Montant à payer: ' . number_format($validated['montant_paye'], 0, ',', ' ') . ' Ar',
-                'solde_actuel' => $soldeActuel,
-                'montant_requis' => $validated['montant_paye'],
-                'solde_insuffisant' => true
-            ], 400);
-        }
+            if ($soldeActuel < $validated['montant_paye']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Solde utilisateur insuffisant',
+                    'solde_actuel' => $soldeActuel
+                ], 400);
+            }
 
-        // DÉCRÉMENTER LE SOLDE UTILISATEUR
-        if ($soldeUser && $validated['montant_paye'] > 0) {
-            $soldeUser->decrement('solde', $validated['montant_paye']);
-            $nouveauSolde = $soldeUser->solde;
-        } else {
-            $nouveauSolde = $soldeActuel;
-        }
+            // DÉCRÉMENTER LE SOLDE UTILISATEUR
+            if ($soldeUser && $validated['montant_paye'] > 0) {
+                $soldeUser->decrement('solde', $validated['montant_paye']);
+                $nouveauSolde = $soldeUser->solde;
+            } else {
+                $nouveauSolde = $soldeActuel;
+            }
 
-        // Mettre à jour la facturation
-        $nouvelleAvance = $facturation->avance_versee + $validated['montant_paye'];
-        $nouveauReste = $facturation->montant_total - $nouvelleAvance;
+            // Mettre à jour la facturation
+            $nouvelleAvance = $facturation->avance_versee + $validated['montant_paye'];
+            $nouveauReste = $facturation->montant_total - $nouvelleAvance;
 
-        $facturation->update([
-            'avance_versee' => $nouvelleAvance,
-            'reste_a_payer' => $nouveauReste
-        ]);
-
-        // Déterminer le statut de paiement
-        $statutPaiement = $this->determinerStatutPaiement($nouvelleAvance, $nouveauReste);
-
-        // Mettre à jour le statut de la fiche de réception
-        $facturation->ficheReception->update(['statut' => $statutPaiement]);
-
-        // CORRECTION : BIEN DÉFINIR LA VARIABLE $impaye AVANT DE L'UTILISER
-        // Créer ou mettre à jour l'impayé
-        $impaye = HEImpaye::updateOrCreate(
-            ['facturation_id' => $validated['facturation_id']],
-            [
-                'montant_du' => $facturation->montant_total,
-                'montant_paye' => $nouvelleAvance,
+            $facturation->update([
+                'avance_versee' => $nouvelleAvance,
                 'reste_a_payer' => $nouveauReste
-            ]
-        );
+            ]);
 
-        DB::commit();
+            // Déterminer le statut de paiement
+            $statutPaiement = $this->determinerStatutPaiement($nouvelleAvance, $nouveauReste);
 
-        // Charger les relations pour la réponse
-        $impaye->load([
-            'facturation.ficheReception.fournisseur',
-            'facturation.ficheReception.siteCollecte'
-        ]);
+            // Mettre à jour le statut de la fiche de réception
+            $fiche = $facturation->ficheReception;
+            $fiche->update(['statut' => $statutPaiement]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Paiement de l\'impayé effectué avec succès',
-            'data' => $impaye, // MAINTENANT $impaye EST DÉFINI
-            'nouveau_statut' => $statutPaiement,
-            'solde_info' => [
-                'solde_avant' => $soldeActuel,
-                'solde_apres' => $nouveauSolde,
-                'montant_debite' => $validated['montant_paye']
-            ]
-        ], 201);
+            // ✅ AJOUTER AU STOCK SI LE NOUVEAU STATUT EST "payé"
+            if ($statutPaiement === 'payé') {
+                Stockhe::ajouterStock($fiche->quantite_totale);
+            }
 
-    } catch (\Illuminate\Validation\ValidationException $e) {
-        DB::rollBack();
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur de validation',
-            'errors' => $e->errors()
-        ], 422);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur lors du paiement de l\'impayé: ' . $e->getMessage(),
-            'error' => $e->getMessage()
-        ], 500);
+            $impaye = HEImpaye::updateOrCreate(
+                ['facturation_id' => $validated['facturation_id']],
+                [
+                    'montant_du' => $facturation->montant_total,
+                    'montant_paye' => $nouvelleAvance,
+                    'reste_a_payer' => $nouveauReste
+                ]
+            );
+
+            DB::commit();
+
+            $impaye->load([
+                'facturation.ficheReception.fournisseur',
+                'facturation.ficheReception.siteCollecte'
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Paiement de l\'impayé effectué avec succès',
+                'data' => $impaye,
+                'nouveau_statut' => $statutPaiement,
+                'stock_ajoute' => $statutPaiement === 'payé',
+                'solde_info' => [
+                    'solde_avant' => $soldeActuel,
+                    'solde_apres' => $nouveauSolde,
+                    'montant_debite' => $validated['montant_paye']
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du paiement de l\'impayé',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
-}
     /**
      * Display the specified resource.
      */

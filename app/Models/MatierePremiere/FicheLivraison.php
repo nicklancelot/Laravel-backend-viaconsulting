@@ -2,101 +2,105 @@
 
 namespace App\Models\MatierePremiere;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Utilisateur;
+use App\Models\Livreur;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class FicheLivraison extends Model
 {
-    use HasFactory;
-
     protected $fillable = [
-        'pv_reception_id',
+        'stockpvs_id',
         'livreur_id',
-        'destinateur_id',
+        'distilleur_id',
         'date_livraison',
         'lieu_depart',
         'ristourne_regionale',
         'ristourne_communale',
         'quantite_a_livrer',
-        'quantite_restante',
-        'est_partielle'
     ];
 
-       protected static function boot()
+    /**
+     * Boot method pour créer automatiquement l'expédition
+     */
+    protected static function boot()
     {
         parent::boot();
 
-        // Calcul automatique avant création
-        static::creating(function ($fiche) {
-            $pv = $fiche->pvReception;
-            $fiche->est_partielle = $fiche->quantite_a_livrer < $pv->quantite_restante;
-            $fiche->quantite_restante = $fiche->quantite_a_livrer;
+        static::created(function ($ficheLivraison) {
+            $ficheLivraison->creerExpeditionAutomatique();
         });
     }
 
-
-    public function pvReception()
+    /**
+     * Créer une expédition automatique
+     */
+    public function creerExpeditionAutomatique(): void
     {
-        return $this->belongsTo(PVReception::class);
+        try {
+            // Charger la relation stockpv si ce n'est pas déjà fait
+            if (!$this->relationLoaded('stockpv')) {
+                $this->load('stockpv');
+            }
+            
+            // Déterminer le type de matière
+            $typeMatiere = 'Non spécifié';
+            if ($this->stockpv && isset($this->stockpv->type_matiere)) {
+                $typeMatiere = $this->stockpv->type_matiere;
+            }
+            
+            // Créer l'expédition
+            \App\Models\Distillation\Expedition::create([
+                'fiche_livraison_id' => $this->id,
+                'statut' => 'en_attente',
+                'date_expedition' => now()->format('Y-m-d'),
+                'quantite_expediee' => $this->quantite_a_livrer,
+                'type_matiere' => $typeMatiere,
+                'lieu_depart' => $this->lieu_depart,
+                'observations' => 'Expédition automatique créée après livraison'
+            ]);
+            
+            \Log::info('Expédition créée automatiquement pour fiche ID: ' . $this->id);
+            
+        } catch (\Exception $e) {
+            \Log::error('Erreur création expédition automatique pour fiche ID ' . $this->id . ': ' . $e->getMessage());
+            \Log::error('Trace: ' . $e->getTraceAsString());
+        }
     }
 
-    public function livraison()
+    public function stockpv(): BelongsTo
     {
-        return $this->hasOne(Livraison::class);
-    }
-        public function livreur(): BelongsTo
-    {
-        return $this->belongsTo(\App\Models\Livreur::class);
+        return $this->belongsTo(Stockpv::class, 'stockpvs_id');
     }
 
-    public function destinateur(): BelongsTo
+    public function livreur(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\Destinateur::class);
+        return $this->belongsTo(Livreur::class);
     }
 
-    // NOUVELLE méthode pour calculer le reste à livrer
-    public function getResteALivrerAttribute()
+    public function distilleur(): BelongsTo
     {
-        return $this->quantite_restante;
+        return $this->belongsTo(Utilisateur::class, 'distilleur_id')->with('siteCollecte');
     }
 
-    // NOUVELLE méthode pour vérifier si complètement livré
-    public function getEstCompletementLivreeAttribute()
+    // Relation avec l'expédition
+    public function expedition(): HasOne
     {
-        return $this->quantite_restante == 0;
-    }
-    
-     // MÉTHODE POUR CONFIRMER UNE LIVRAISON (PARTIELLE OU TOTALE)
-    public function confirmerLivraison($quantiteEffectivementLivree = null)
-    {
-        $quantiteLivree = $quantiteEffectivementLivree ?? $this->quantite_a_livrer;
-        
-        // Mettre à jour la quantité restante de la fiche
-        $this->quantite_restante = max(0, $this->quantite_a_livrer - $quantiteLivree);
-        
-        // Mettre à jour le PV réception
-        $this->pvReception->deduireQuantiteLivree($quantiteLivree);
-        
-        $this->save();
-        
-        return $this;
+        return $this->hasOne(\App\Models\Distillation\Expedition::class, 'fiche_livraison_id');
     }
 
-    // Accesseur pour la quantité effectivement livrée
-    public function getQuantiteLivreeAttribute()
+    // Accès au site de collecte via le distilleur
+    public function getSiteCollecteAttribute()
     {
-        return $this->quantite_a_livrer - $this->quantite_restante;
+        return $this->distilleur->siteCollecte ?? null;
     }
 
-
-    // Accesseur pour le pourcentage livré de cette fiche
-    public function getPourcentageLivreeAttribute()
+    /**
+     * Vérifier si une expédition existe déjà
+     */
+    public function aUneExpedition(): bool
     {
-        if ($this->quantite_a_livrer == 0) return 0;
-        return (($this->quantite_a_livrer - $this->quantite_restante) / $this->quantite_a_livrer) * 100;
+        return $this->expedition()->exists();
     }
-
-    
 }

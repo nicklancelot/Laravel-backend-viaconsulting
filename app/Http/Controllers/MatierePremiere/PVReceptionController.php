@@ -69,7 +69,7 @@ class PVReceptionController extends Controller
         ], 500);
     }
 }
-   public function store(Request $request): JsonResponse
+public function store(Request $request): JsonResponse
 {
     DB::beginTransaction(); 
     
@@ -210,6 +210,17 @@ class PVReceptionController extends Controller
             $paiement->update(['pv_reception_id' => $pvReception->id]);
         }
 
+        // ✅ CONDITION : Si le statut est "paye", stocker dans Stockpv
+        if ($statut === 'paye') {
+            DB::table('stockpvs')
+                ->where('type_matiere', $pvReception->type)
+                ->update([
+                    'stock_total' => DB::raw("stock_total + {$pvReception->poids_net}"),
+                    'stock_disponible' => DB::raw("stock_disponible + {$pvReception->poids_net}"),
+                    'updated_at' => now(),
+                ]);
+        }
+
         DB::commit();
 
         return response()->json([
@@ -224,6 +235,7 @@ class PVReceptionController extends Controller
                 'dette_fournisseur_finale' => $detteFournisseur,
                 'solde_utilisateur' => $soldeActuel,
                 'statut' => $statut,
+                'stock_ajoute' => $statut === 'paye',
                 'details_paiements' => collect($paiementsUtilises)->map(function($item) {
                     $paiement = $item['paiement'];
                     return [

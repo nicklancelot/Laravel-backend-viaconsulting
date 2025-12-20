@@ -101,7 +101,7 @@ class StockController extends Controller
                     'id' => $user->id,
                     'nom' => $user->name,
                     'email' => $user->email,
-                    'role' => $user->role // Ajout du rôle pour le frontend
+                    'role' => $user->role 
                 ]
             ]
         ], 200);

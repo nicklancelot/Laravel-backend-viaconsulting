@@ -7,6 +7,7 @@ use App\Models\MatierePremiere\Impaye;
 use App\Models\MatierePremiere\PVReception;
 use App\Models\SoldeUser;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ImpayeController extends Controller
 {
@@ -19,7 +20,6 @@ class ImpayeController extends Controller
                 'data' => $impayes
             ], 200);
         } catch (\Exception $e) {
-         
             return response()->json([
                 'status' => 'error',
                 'message' => 'Erreur lors de la récupération des impayés'
@@ -30,8 +30,6 @@ class ImpayeController extends Controller
     public function store(Request $request)
     {
         try {
-        
-
             $validator = validator($request->all(), [
                 'pv_reception_id' => 'required|exists:p_v_receptions,id',
                 'date_paiement' => 'nullable|date',
@@ -42,7 +40,6 @@ class ImpayeController extends Controller
             ]);
 
             if ($validator->fails()) {
-         
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Validation failed',
@@ -53,14 +50,12 @@ class ImpayeController extends Controller
             $pvReception = PVReception::find($request->pv_reception_id);
             
             if (!$pvReception) {
-          
                 return response()->json([
                     'status' => 'error',
                     'message' => 'PV de réception non trouvé'
                 ], 404);
             }
 
-            // VÉRIFICATION SOLDE UTILISATEUR
             $soldeUser = SoldeUser::where('utilisateur_id', $pvReception->utilisateur_id)->first();
             $soldeActuel = $soldeUser ? $soldeUser->solde : 0;
 
@@ -74,7 +69,6 @@ class ImpayeController extends Controller
                 ], 400);
             }
 
-            // DÉCRÉMENTER LE SOLDE UTILISATEUR
             if ($soldeUser && $request->montant_paye > 0) {
                 $soldeUser->decrement('solde', $request->montant_paye);
                 $nouveauSolde = $soldeUser->solde;
@@ -82,17 +76,31 @@ class ImpayeController extends Controller
                 $nouveauSolde = $soldeActuel;
             }
 
-            // ✅ Génération du numéro d'impayé avec log pour debug
             $numeroFacture = Impaye::genererNumeroImpaye();
-     
 
             $request->merge([
                 'numero_facture' => $numeroFacture
             ]);
 
-
             $impaye = Impaye::create($request->all());
             
+            $nouvelleDette = $pvReception->dette_fournisseur - $request->montant_paye;
+            
+            $nouveauStatut = $pvReception->statut;
+            if ($nouvelleDette <= 0) {
+                $nouveauStatut = 'paye';
+            } else {
+                $nouveauStatut = 'incomplet';
+            }
+            
+            $pvReception->update([
+                'dette_fournisseur' => max(0, $nouvelleDette),
+                'statut' => $nouveauStatut
+            ]);
+
+            if ($nouveauStatut === 'paye') {
+                $this->mettreEnStockAutomatique($pvReception);
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -102,16 +110,28 @@ class ImpayeController extends Controller
                     'solde_avant' => $soldeActuel,
                     'solde_apres' => $nouveauSolde,
                     'montant_debite' => $request->montant_paye
-                ]
+                ],
+                'stock_ajoute' => $nouveauStatut === 'paye'
             ], 201);
 
         } catch (\Exception $e) {
-
-            
             return response()->json([
                 'status' => 'error',
-                'message' => 'Erreur lors de la création de l\'impayé: ' . $e->getMessage() // ✅ Inclure le message d'erreur réel pour le frontend
+                'message' => 'Erreur lors de la création de l\'impayé: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    private function mettreEnStockAutomatique(PVReception $pvReception): void
+    {
+        if ($pvReception->statut === 'paye') {
+            DB::table('stockpvs')
+                ->where('type_matiere', $pvReception->type)
+                ->update([
+                    'stock_total' => DB::raw("stock_total + {$pvReception->poids_net}"),
+                    'stock_disponible' => DB::raw("stock_disponible + {$pvReception->poids_net}"),
+                    'updated_at' => now(),
+                ]);
         }
     }
 
@@ -133,7 +153,6 @@ class ImpayeController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-    
             return response()->json([
                 'status' => 'error',
                 'message' => 'Erreur lors de la récupération de l\'impayé'
@@ -169,13 +188,11 @@ class ImpayeController extends Controller
                 ], 422);
             }
 
-            // VÉRIFICATION SOLDE UTILISATEUR POUR MODIFICATION
             $pvReception = PVReception::find($impaye->pv_reception_id);
             if ($pvReception && isset($request->montant_paye) && $request->montant_paye != $impaye->montant_paye) {
                 $difference = $request->montant_paye - $impaye->montant_paye;
                 
                 if ($difference > 0) {
-                    // Vérifier si on doit augmenter le paiement
                     $soldeUser = SoldeUser::where('utilisateur_id', $pvReception->utilisateur_id)->first();
                     $soldeActuel = $soldeUser ? $soldeUser->solde : 0;
                     
@@ -187,14 +204,12 @@ class ImpayeController extends Controller
                         ], 400);
                     }
                     
-                    // Décrémenter le solde pour la différence
                     if ($soldeUser && $difference > 0) {
                         $soldeUser->decrement('solde', $difference);
                     }
                 }
             }
 
-            // ✅ Correction : Utiliser fill() + save() pour déclencher les événements du modèle (calculs et hooks)
             $impaye->fill($request->all());
             $impaye->save();
 
@@ -205,7 +220,6 @@ class ImpayeController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-          
             return response()->json([
                 'status' => 'error',
                 'message' => 'Erreur lors de la modification de l\'impayé'
@@ -216,19 +230,14 @@ class ImpayeController extends Controller
     public function enregistrerPaiement(Request $request, $id)
     {
         try {
-      
-
             $impaye = Impaye::find($id);
             
             if (!$impaye) {
-            
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Impayé non trouvé'
                 ], 404);
             }
-
-   
 
             $validator = validator($request->all(), [
                 'montant_paye' => 'required|numeric|min:0.01|max:' . $impaye->reste_a_payer,
@@ -238,7 +247,6 @@ class ImpayeController extends Controller
             ]);
 
             if ($validator->fails()) {
-            
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Erreur de validation',
@@ -246,7 +254,6 @@ class ImpayeController extends Controller
                 ], 422);
             }
 
-            // VÉRIFICATION SOLDE UTILISATEUR
             $pvReception = PVReception::find($impaye->pv_reception_id);
             $soldeUser = SoldeUser::where('utilisateur_id', $pvReception->utilisateur_id)->first();
             $soldeActuel = $soldeUser ? $soldeUser->solde : 0;
@@ -261,7 +268,6 @@ class ImpayeController extends Controller
                 ], 400);
             }
 
-            // DÉCRÉMENTER LE SOLDE UTILISATEUR
             if ($soldeUser && $request->montant_paye > 0) {
                 $soldeUser->decrement('solde', $request->montant_paye);
                 $nouveauSolde = $soldeUser->solde;
@@ -269,11 +275,8 @@ class ImpayeController extends Controller
                 $nouveauSolde = $soldeActuel;
             }
 
-
-            // Calculer le nouveau montant payé
             $nouveauMontantPaye = $impaye->montant_paye + $request->montant_paye;
 
-            // ✅ Correction : Utiliser fill() + save() pour déclencher les événements (calcul de reste_a_payer et mise à jour de la réception)
             $updateData = [
                 'montant_paye' => $nouveauMontantPaye,
                 'mode_paiement' => $request->mode_paiement,
@@ -282,16 +285,9 @@ class ImpayeController extends Controller
             ];
             
             $impaye->fill($updateData);
-            $impaye->save(); // ✅ Déclenche saving (calculerChamps) et updated (mettreAJourStatutReception)
+            $impaye->save();
 
-  
-
-            // ✅ Suppression du bloc manuel de mise à jour de pvReception : le hook updated s'en charge automatiquement
-
-            // Recharger l'impayé avec les relations (attributs déjà à jour via save())
             $impaye->load(['pvReception.fournisseur', 'pvReception.provenance']);
-
-         
 
             return response()->json([
                 'status' => 'success',
@@ -305,15 +301,9 @@ class ImpayeController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-
             return response()->json([
                 'status' => 'error',
-                'message' => 'Erreur lors de l\'enregistrement du paiement d\'impayé: ' . $e->getMessage(),
-                'debug' => env('APP_DEBUG') ? [
-                    'message' => $e->getMessage(),
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine()
-                ] : null
+                'message' => 'Erreur lors de l\'enregistrement du paiement d\'impayé: ' . $e->getMessage()
             ], 500);
         }
     }

@@ -16,6 +16,6 @@ class SiteCollecte extends Model
      */
     public function utilisateurs(): HasMany
     {
-        return $this->hasMany(Utilisateur::class);
+        return $this->hasMany(Utilisateur::class, 'site_collecte_id');
     }
 }

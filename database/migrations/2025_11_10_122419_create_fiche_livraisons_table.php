@@ -10,21 +10,19 @@ return new class extends Migration
     {
         Schema::create('fiche_livraisons', function (Blueprint $table) {
             $table->id();
-            
-            // Référence au PV de réception
-            $table->foreignId('pv_reception_id')->constrained('p_v_receptions')->onDelete('cascade');
+            $table->foreignId('stockpvs_id')->constrained('stockpvs')->onDelete('cascade');
             $table->foreignId('livreur_id')->constrained('livreurs')->onDelete('cascade');
-            $table->foreignId('destinateur_id')->constrained('destinateurs')->onDelete('cascade');
+   
+            $table->foreignId('distilleur_id')->constrained('utilisateurs')->onDelete('cascade');
             
-            // Détails de livraison
+            // Informations de livraison
             $table->date('date_livraison');
             $table->string('lieu_depart');
             $table->decimal('ristourne_regionale', 10, 2)->default(0);
             $table->decimal('ristourne_communale', 10, 2)->default(0);
+            // Quantité livrée
             $table->decimal('quantite_a_livrer', 10, 2);
-            $table->decimal('quantite_restante', 10, 2)->default(0); 
-            $table->boolean('est_partielle')->default(false); 
-            
+
             $table->timestamps();
         });
     }
