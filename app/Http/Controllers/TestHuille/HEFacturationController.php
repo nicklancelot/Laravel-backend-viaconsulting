@@ -121,9 +121,9 @@ class HEFacturationController extends Controller
             $fiche->update(['statut' => $statutPaiement]);
 
             // ✅ AJOUTER AU STOCK SI LE STATUT EST "payé"
-            if ($statutPaiement === 'payé') {
-                Stockhe::ajouterStock($fiche->quantite_totale);
-            }
+        if ($statutPaiement === 'payé') {
+    Stockhe::ajouterStock($fiche->quantite_totale, $fiche->utilisateur_id);
+}
 
             DB::commit();
 

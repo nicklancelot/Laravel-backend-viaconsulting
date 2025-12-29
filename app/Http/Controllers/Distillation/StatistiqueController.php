@@ -19,12 +19,13 @@ class StatistiqueController extends Controller
         try {
             $user = Auth::user();
             
-            if ($user->role !== 'distilleur') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Accès réservé aux distillateurs'
-                ], 403);
-            }
+     if (!in_array($user->role, ['admin', 'collecteur', 'vendeur', 'distilleur'])) {
+    return response()->json([
+        'success' => false,
+        'message' => 'Accès non autorisé'
+    ], 403);
+}
+
 
             // Récupérer toutes les distillations du distilleur
             $distillations = Distillation::whereHas('expedition.ficheLivraison', function($query) use ($user) {

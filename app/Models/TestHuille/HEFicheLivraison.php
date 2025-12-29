@@ -58,23 +58,27 @@ class HEFicheLivraison extends Model
     /**
      * Créer une réception automatique
      */
-    public function creerReceptionAutomatique(): void
-    {
-        try {
-            \App\Models\Vente\Reception::create([
-                'fiche_livraison_id' => $this->id,
-                'vendeur_id' => $this->vendeur_id,
-                'date_reception' => now()->toDateString(),
-                'heure_reception' => now()->format('H:i'),
-                'statut' => 'en attente',
-                'quantite_recue' => $this->quantite_a_livrer,
-                'lieu_reception' => $this->destination,
-                'observations' => 'Réception automatique créée après livraison'
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Erreur création réception automatique: ' . $e->getMessage());
-        }
+/**
+ * Créer une réception automatique
+ */
+public function creerReceptionAutomatique(): void
+{
+    try {
+        \App\Models\Vente\Reception::create([
+            'fiche_livraison_id' => $this->id,
+            'vendeur_id' => $this->vendeur_id,
+            'date_reception' => now()->toDateString(),
+            'heure_reception' => now()->format('H:i'),
+            'statut' => 'en attente',
+            'quantite_recue' => $this->quantite_a_livrer,
+            'lieu_reception' => $this->destination,
+            'type_produit' => $this->type_produit, // AJOUTÉ
+            'observations' => 'Réception automatique créée après livraison'
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('Erreur création réception automatique: ' . $e->getMessage());
     }
+}
 
     /**
      * Relation avec le stock

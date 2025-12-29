@@ -122,16 +122,52 @@ class ImpayeController extends Controller
         }
     }
 
-    private function mettreEnStockAutomatique(PVReception $pvReception): void
+ private function mettreEnStockAutomatique(PVReception $pvReception): void
     {
         if ($pvReception->statut === 'paye') {
+            // 1. Stock global
             DB::table('stockpvs')
                 ->where('type_matiere', $pvReception->type)
+                ->whereNull('utilisateur_id')
+                ->where('niveau_stock', 'global')
                 ->update([
                     'stock_total' => DB::raw("stock_total + {$pvReception->poids_net}"),
                     'stock_disponible' => DB::raw("stock_disponible + {$pvReception->poids_net}"),
                     'updated_at' => now(),
                 ]);
+                
+            // 2. Stock de l'utilisateur (collecteur)
+            $stockUtilisateur = DB::table('stockpvs')
+                ->where('type_matiere', $pvReception->type)
+                ->where('utilisateur_id', $pvReception->utilisateur_id)
+                ->where('niveau_stock', 'utilisateur')
+                ->first();
+                
+            if ($stockUtilisateur) {
+                // Mettre à jour le stock existant
+                DB::table('stockpvs')
+                    ->where('id', $stockUtilisateur->id)
+                    ->update([
+                        'stock_total' => DB::raw("stock_total + {$pvReception->poids_net}"),
+                        'stock_disponible' => DB::raw("stock_disponible + {$pvReception->poids_net}"),
+                        'updated_at' => now(),
+                    ]);
+            } else {
+                // Créer un nouveau stock pour l'utilisateur
+                DB::table('stockpvs')->insert([
+                    'type_matiere' => $pvReception->type,
+                    'stock_total' => $pvReception->poids_net,
+                    'stock_disponible' => $pvReception->poids_net,
+                    'utilisateur_id' => $pvReception->utilisateur_id,
+                    'niveau_stock' => 'utilisateur',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+            
+            \Log::info("Stock ajouté via impayé pour PV {$pvReception->id}: " . 
+                "Global +{$pvReception->poids_net}kg, " .
+                "Utilisateur {$pvReception->utilisateur_id} +{$pvReception->poids_net}kg");
         }
     }
 

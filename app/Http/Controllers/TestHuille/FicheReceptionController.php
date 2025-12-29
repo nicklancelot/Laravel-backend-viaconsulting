@@ -174,10 +174,9 @@ public function store(Request $request)
         }
 
         // ✅ CONDITION : Si le statut est "payé", stocker dans Stockhe
-        if ($statutFiche === 'payé') {
-            \App\Models\TestHuille\Stockhe::ajouterStock($fiche->poids_net);
-        }
-
+if ($statutFiche === 'payé') {
+    \App\Models\TestHuille\Stockhe::ajouterStock($fiche->poids_net, $fiche->utilisateur_id);
+}
         DB::commit();
 
         $fiche->load(['fournisseur', 'siteCollecte', 'utilisateur']);

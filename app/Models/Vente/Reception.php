@@ -20,17 +20,12 @@ class Reception extends Model
         'quantite_recue',
         'lieu_reception',
         'type_livraison',
-        'signataire',
+        'type_produit', // AJOUTÉ
         'date_receptionne'
     ];
 
-    protected $casts = [
-        'date_reception' => 'date',
-        'date_receptionne' => 'datetime',
-    ];
-
     /**
-     * Déterminer automatiquement le type de livraison
+     * Déterminer automatiquement le type de livraison et le type de produit
      */
     protected static function boot()
     {
@@ -39,8 +34,16 @@ class Reception extends Model
         static::creating(function ($reception) {
             if ($reception->fiche_livraison_id) {
                 $reception->type_livraison = 'fiche_livraison';
+                // Récupérer le type de produit depuis la fiche de livraison
+                if ($fiche = HEFicheLivraison::find($reception->fiche_livraison_id)) {
+                    $reception->type_produit = $fiche->type_produit;
+                }
             } elseif ($reception->transport_id) {
                 $reception->type_livraison = 'transport';
+                // Récupérer le type de produit depuis le transport
+                if ($transport = Transport::find($reception->transport_id)) {
+                    $reception->type_produit = $transport->type_matiere;
+                }
             }
         });
     }
@@ -120,19 +123,7 @@ class Reception extends Model
         $this->update([
             'statut' => 'receptionne',
             'date_receptionne' => now(),
-            'signataire' => $data['signataire'] ?? $this->signataire,
             'observations' => $data['observations'] ?? $this->observations,
-        ]);
-    }
-
-    /**
-     * Marquer comme annulée
-     */
-    public function marquerAnnule(string $raison = null): void
-    {
-        $this->update([
-            'statut' => 'annule',
-            'observations' => $raison ? ($this->observations . "\nAnnulation: " . $raison) : $this->observations,
         ]);
     }
 
@@ -150,5 +141,13 @@ class Reception extends Model
     public function scopeEnAttente($query)
     {
         return $query->where('statut', 'en attente');
+    }
+
+    /**
+     * Scope pour les réceptions réceptionnées
+     */
+    public function scopeRecues($query)
+    {
+        return $query->where('statut', 'receptionne');
     }
 }

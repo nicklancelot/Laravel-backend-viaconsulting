@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\MatierePremiere\PVReception;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -40,4 +41,6 @@ class Utilisateur extends Authenticatable
     {
         return $this->belongsTo(SiteCollecte::class, 'site_collecte_id');
     }
+
+   
 }

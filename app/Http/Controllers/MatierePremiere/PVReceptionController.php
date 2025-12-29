@@ -69,212 +69,247 @@ class PVReceptionController extends Controller
         ], 500);
     }
 }
-public function store(Request $request): JsonResponse
-{
-    DB::beginTransaction(); 
-    
-    try {
-        $user = Auth::user();
+
+ public function store(Request $request): JsonResponse
+    {
+        DB::beginTransaction(); 
         
-        $rules = [
-            'type' => 'required|in:FG,CG,GG',
-            'date_reception' => 'required|date',
-            'dette_fournisseur' => 'required|numeric|min:0',
-            'utilisateur_id' => 'required|exists:utilisateurs,id',
-            'fournisseur_id' => 'required|exists:fournisseurs,id',
-            'provenance_id' => 'required|exists:provenances,id',
-            'poids_brut' => 'required|numeric|min:0',
-            'type_emballage' => 'required|in:sac,bidon,fut',
-            'poids_emballage' => 'required|numeric|min:0',
-            'nombre_colisage' => 'required|integer|min:1',
-            'prix_unitaire' => 'required|numeric|min:0',
-            'taux_humidite' => 'nullable|numeric|min:0|max:100',
-            'taux_dessiccation' => 'nullable|numeric|min:0|max:100',
-        ];
-
-        $request->validate($rules);
-
-        // Vérifier si le fournisseur a des paiements en attente
-        $paiementsEnAttente = PayementAvance::where('fournisseur_id', $request->fournisseur_id)
-            ->where('statut', 'en_attente')
-            ->exists();
-
-        if ($paiementsEnAttente) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Impossible de créer un PV : Ce fournisseur a des paiements en avance non réglés (en attente)'
-            ], 400);
-        }
-
-        // Récupérer les paiements disponibles (arrivé et avec montant restant > 0)
-        $paiementsDisponibles = PayementAvance::where('fournisseur_id', $request->fournisseur_id)
-            ->where('statut', 'arrivé')
-            ->where('montant_restant', '>', 0)
-            ->orderBy('date', 'asc')
-            ->get();
-
-        $soldeUser = SoldeUser::where('utilisateur_id', $request->utilisateur_id)->first();
-        $soldeActuel = $soldeUser ? $soldeUser->solde : 0;
-
-        $poidsNetEstime = $this->calculerPoidsNet($request);
-        $prixTotalEstime = $poidsNetEstime * $request->prix_unitaire;
-
-        // Vérifier les permissions
-        if ($user->role !== 'admin' && $request->utilisateur_id != $user->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Vous ne pouvez créer des PV que pour votre propre compte'
-            ], 403);
-        }
-
-        // Générer le numéro de document
-        $lastDoc = PVReception::where('type', $request->type)->orderBy('id', 'desc')->first();
-        $docNumber = $request->type . '-' . str_pad(($lastDoc ? intval(explode('-', $lastDoc->numero_doc)[1]) : 0) + 1, 6, '0', STR_PAD_LEFT);
-
-        // Calculer le poids net et prix total
-        $poidsNet = $this->calculerPoidsNet($request);
-        $prixTotal = $poidsNet * $request->prix_unitaire;
-
-        $montantVerse = $request->dette_fournisseur;
-
-        // CALCUL : Montant à couvrir par les paiements d'avance
-        $montantACouvrirParPaiements = max(0, $prixTotal - $montantVerse);
-        
-        // LOGIQUE D'UTILISATION DES PAIEMENTS D'AVANCE
-        $paiementsUtilises = [];
-        $totalPaiementsUtilises = 0;
-        $montantRestantACouvrir = $montantACouvrirParPaiements;
-
-        foreach ($paiementsDisponibles as $paiement) {
-            if ($montantRestantACouvrir <= 0) break;
+        try {
+            $user = Auth::user();
             
-            // Calculer combien utiliser de ce paiement (montant restant disponible)
-            $montantDisponiblePaiement = $paiement->montant_restant;
-            $montantAUtiliser = min($montantDisponiblePaiement, $montantRestantACouvrir);
-            
-            if ($montantAUtiliser <= 0) continue;
-            
-            // Mettre à jour le paiement (partiellement ou totalement)
-            $nouveauMontantUtilise = $paiement->montant_utilise + $montantAUtiliser;
-            $nouveauMontantRestant = $paiement->montant - $nouveauMontantUtilise;
-            
-            // Déterminer le statut du paiement
-            $nouveauStatutPaiement = ($nouveauMontantRestant == 0) ? 'utilise' : 'arrivé';
-            
-            $paiement->update([
-                'montant_utilise' => $nouveauMontantUtilise,
-                'montant_restant' => $nouveauMontantRestant,
-                'pv_reception_id' => null, // On mettra à jour après création du PV
-                'date_utilisation' => now(),
-                'statut' => $nouveauStatutPaiement
-            ]);
-            
-            $paiementsUtilises[] = [
-                'paiement' => $paiement,
-                'montant_utilise' => $montantAUtiliser,
-                'montant_restant_apres' => $nouveauMontantRestant
+            $rules = [
+                'type' => 'required|in:FG,CG,GG',
+                'date_reception' => 'required|date',
+                'dette_fournisseur' => 'required|numeric|min:0',
+                'utilisateur_id' => 'required|exists:utilisateurs,id',
+                'fournisseur_id' => 'required|exists:fournisseurs,id',
+                'provenance_id' => 'required|exists:provenances,id',
+                'poids_brut' => 'required|numeric|min:0',
+                'type_emballage' => 'required|in:sac,bidon,fut',
+                'poids_emballage' => 'required|numeric|min:0',
+                'nombre_colisage' => 'required|integer|min:1',
+                'prix_unitaire' => 'required|numeric|min:0',
+                'taux_humidite' => 'nullable|numeric|min:0|max:100',
+                'taux_dessiccation' => 'nullable|numeric|min:0|max:100',
             ];
+
+            $request->validate($rules);
+
+            // Vérifier si le fournisseur a des paiements en attente
+            $paiementsEnAttente = PayementAvance::where('fournisseur_id', $request->fournisseur_id)
+                ->where('statut', 'en_attente')
+                ->exists();
+
+            if ($paiementsEnAttente) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Impossible de créer un PV : Ce fournisseur a des paiements en avance non réglés (en attente)'
+                ], 400);
+            }
+
+            // Récupérer les paiements disponibles
+            $paiementsDisponibles = PayementAvance::where('fournisseur_id', $request->fournisseur_id)
+                ->where('statut', 'arrivé')
+                ->where('montant_restant', '>', 0)
+                ->orderBy('date', 'asc')
+                ->get();
+
+            $soldeUser = SoldeUser::where('utilisateur_id', $request->utilisateur_id)->first();
+            $soldeActuel = $soldeUser ? $soldeUser->solde : 0;
+
+            $poidsNetEstime = $this->calculerPoidsNet($request);
+            $prixTotalEstime = $poidsNetEstime * $request->prix_unitaire;
+
+            // Vérifier les permissions
+            if ($user->role !== 'admin' && $request->utilisateur_id != $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Vous ne pouvez créer des PV que pour votre propre compte'
+                ], 403);
+            }
+
+            // Générer le numéro de document
+            $lastDoc = PVReception::where('type', $request->type)->orderBy('id', 'desc')->first();
+            $docNumber = $request->type . '-' . str_pad(($lastDoc ? intval(explode('-', $lastDoc->numero_doc)[1]) : 0) + 1, 6, '0', STR_PAD_LEFT);
+
+            // Calculer le poids net et prix total
+            $poidsNet = $this->calculerPoidsNet($request);
+            $prixTotal = $poidsNet * $request->prix_unitaire;
+
+            $montantVerse = $request->dette_fournisseur;
+
+            // CALCUL : Montant à couvrir par les paiements d'avance
+            $montantACouvrirParPaiements = max(0, $prixTotal - $montantVerse);
             
-            $totalPaiementsUtilises += $montantAUtiliser;
-            $montantRestantACouvrir -= $montantAUtiliser;
-        }
+            // LOGIQUE D'UTILISATION DES PAIEMENTS D'AVANCE
+            $paiementsUtilises = [];
+            $totalPaiementsUtilises = 0;
+            $montantRestantACouvrir = $montantACouvrirParPaiements;
 
-        // Recalculer la dette fournisseur après utilisation des paiements
-        $detteFournisseur = max(0, $prixTotal - $montantVerse - $totalPaiementsUtilises);
-        $statut = ($detteFournisseur == 0) ? 'paye' : 'non_paye';
-
-        // Créer le PV de réception
-        $pvReception = PVReception::create([
-            'type' => $request->type,
-            'numero_doc' => $docNumber,
-            'date_reception' => $request->date_reception,
-            'dette_fournisseur' => $detteFournisseur,
-            'utilisateur_id' => $request->utilisateur_id,
-            'fournisseur_id' => $request->fournisseur_id,
-            'provenance_id' => $request->provenance_id,
-            'poids_brut' => $request->poids_brut,
-            'type_emballage' => $request->type_emballage,
-            'poids_emballage' => $request->poids_emballage,
-            'poids_net' => $poidsNet,
-            'nombre_colisage' => $request->nombre_colisage,
-            'prix_unitaire' => $request->prix_unitaire,
-            'taux_humidite' => $request->taux_humidite,
-            'taux_dessiccation' => $request->taux_dessiccation,
-            'prix_total' => $prixTotal,
-            'statut' => $statut,
-        ]);
-
-        // Maintenant mettre à jour les paiements avec l'ID du PV créé
-        foreach ($paiementsUtilises as $item) {
-            $paiement = $item['paiement'];
-            $paiement->update(['pv_reception_id' => $pvReception->id]);
-        }
-
-        // ✅ CONDITION : Si le statut est "paye", stocker dans Stockpv
-        if ($statut === 'paye') {
-            DB::table('stockpvs')
-                ->where('type_matiere', $pvReception->type)
-                ->update([
-                    'stock_total' => DB::raw("stock_total + {$pvReception->poids_net}"),
-                    'stock_disponible' => DB::raw("stock_disponible + {$pvReception->poids_net}"),
-                    'updated_at' => now(),
+            foreach ($paiementsDisponibles as $paiement) {
+                if ($montantRestantACouvrir <= 0) break;
+                
+                $montantDisponiblePaiement = $paiement->montant_restant;
+                $montantAUtiliser = min($montantDisponiblePaiement, $montantRestantACouvrir);
+                
+                if ($montantAUtiliser <= 0) continue;
+                
+                $nouveauMontantUtilise = $paiement->montant_utilise + $montantAUtiliser;
+                $nouveauMontantRestant = $paiement->montant - $nouveauMontantUtilise;
+                
+                $nouveauStatutPaiement = ($nouveauMontantRestant == 0) ? 'utilise' : 'arrivé';
+                
+                $paiement->update([
+                    'montant_utilise' => $nouveauMontantUtilise,
+                    'montant_restant' => $nouveauMontantRestant,
+                    'pv_reception_id' => null,
+                    'date_utilisation' => now(),
+                    'statut' => $nouveauStatutPaiement
                 ]);
-        }
+                
+                $paiementsUtilises[] = [
+                    'paiement' => $paiement,
+                    'montant_utilise' => $montantAUtiliser,
+                    'montant_restant_apres' => $nouveauMontantRestant
+                ];
+                
+                $totalPaiementsUtilises += $montantAUtiliser;
+                $montantRestantACouvrir -= $montantAUtiliser;
+            }
 
-        DB::commit();
+            // Recalculer la dette fournisseur
+            $detteFournisseur = max(0, $prixTotal - $montantVerse - $totalPaiementsUtilises);
+            $statut = ($detteFournisseur == 0) ? 'paye' : 'non_paye';
 
-        return response()->json([
-            'success' => true,
-            'message' => 'PV de réception créé avec succès',
-            'data' => $pvReception->load(['utilisateur', 'fournisseur', 'provenance']),
-            'calculs' => [
+            // Créer le PV de réception
+            $pvReception = PVReception::create([
+                'type' => $request->type,
+                'numero_doc' => $docNumber,
+                'date_reception' => $request->date_reception,
+                'dette_fournisseur' => $detteFournisseur,
+                'utilisateur_id' => $request->utilisateur_id,
+                'fournisseur_id' => $request->fournisseur_id,
+                'provenance_id' => $request->provenance_id,
+                'poids_brut' => $request->poids_brut,
+                'type_emballage' => $request->type_emballage,
+                'poids_emballage' => $request->poids_emballage,
+                'poids_net' => $poidsNet,
+                'nombre_colisage' => $request->nombre_colisage,
+                'prix_unitaire' => $request->prix_unitaire,
+                'taux_humidite' => $request->taux_humidite,
+                'taux_dessiccation' => $request->taux_dessiccation,
                 'prix_total' => $prixTotal,
-                'montant_verse_actuel' => $montantVerse,
-                'montant_a_couvrir_par_paiements' => $montantACouvrirParPaiements,
-                'paiements_avance_utilises' => $totalPaiementsUtilises,
-                'dette_fournisseur_finale' => $detteFournisseur,
-                'solde_utilisateur' => $soldeActuel,
                 'statut' => $statut,
-                'stock_ajoute' => $statut === 'paye',
-                'details_paiements' => collect($paiementsUtilises)->map(function($item) {
-                    $paiement = $item['paiement'];
-                    return [
-                        'id' => $paiement->id,
-                        'reference' => $paiement->reference,
-                        'montant_total' => $paiement->montant,
-                        'montant_utilise_avant' => $paiement->montant_utilise - $item['montant_utilise'],
-                        'montant_utilise_ce_pv' => $item['montant_utilise'],
-                        'montant_utilise_total' => $paiement->montant_utilise,
-                        'montant_restant' => $paiement->montant_restant,
-                        'type' => $paiement->type,
-                        'statut' => $paiement->statut
-                    ];
-                }),
-                'reste_a_couvrir_par_paiements' => max(0, $montantACouvrirParPaiements - $totalPaiementsUtilises),
-                'message_paiements' => $montantRestantACouvrir > 0 ? 
-                    '⚠️ Paiements d\'avance insuffisants, reste à payer: ' . number_format($montantRestantACouvrir, 0, ',', ' ') . ' Ar' :
-                    '✅ Paiements d\'avance suffisants'
-            ]
-        ], 201);
+            ]);
 
-    } catch (ValidationException $e) {
-        DB::rollBack();
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur de validation',
-            'errors' => $e->errors()
-        ], 422);
+            // Mettre à jour les paiements avec l'ID du PV créé
+            foreach ($paiementsUtilises as $item) {
+                $paiement = $item['paiement'];
+                $paiement->update(['pv_reception_id' => $pvReception->id]);
+            }
 
-    } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('Erreur lors de la création du PV de réception: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'message' => 'Erreur lors de la création du PV de réception',
-            'error' => env('APP_DEBUG') ? $e->getMessage() : 'Erreur interne du serveur'
-        ], 500);
+            // ✅ CONDITION : Si le statut est "paye", stocker dans Stockpv (global + utilisateur)
+            if ($statut === 'paye') {
+                // 1. Stock global
+                DB::table('stockpvs')
+                    ->where('type_matiere', $pvReception->type)
+                    ->whereNull('utilisateur_id')
+                    ->where('niveau_stock', 'global')
+                    ->update([
+                        'stock_total' => DB::raw("stock_total + {$pvReception->poids_net}"),
+                        'stock_disponible' => DB::raw("stock_disponible + {$pvReception->poids_net}"),
+                        'updated_at' => now(),
+                    ]);
+                    
+                // 2. Stock de l'utilisateur (collecteur)
+                $stockUtilisateur = DB::table('stockpvs')
+                    ->where('type_matiere', $pvReception->type)
+                    ->where('utilisateur_id', $pvReception->utilisateur_id)
+                    ->where('niveau_stock', 'utilisateur')
+                    ->first();
+                    
+                if ($stockUtilisateur) {
+                    // Mettre à jour le stock existant
+                    DB::table('stockpvs')
+                        ->where('id', $stockUtilisateur->id)
+                        ->update([
+                            'stock_total' => DB::raw("stock_total + {$pvReception->poids_net}"),
+                            'stock_disponible' => DB::raw("stock_disponible + {$pvReception->poids_net}"),
+                            'updated_at' => now(),
+                        ]);
+                } else {
+                    // Créer un nouveau stock pour l'utilisateur
+                    DB::table('stockpvs')->insert([
+                        'type_matiere' => $pvReception->type,
+                        'stock_total' => $pvReception->poids_net,
+                        'stock_disponible' => $pvReception->poids_net,
+                        'utilisateur_id' => $pvReception->utilisateur_id,
+                        'niveau_stock' => 'utilisateur',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'PV de réception créé avec succès',
+                'data' => $pvReception->load(['utilisateur', 'fournisseur', 'provenance']),
+                'calculs' => [
+                    'prix_total' => $prixTotal,
+                    'montant_verse_actuel' => $montantVerse,
+                    'montant_a_couvrir_par_paiements' => $montantACouvrirParPaiements,
+                    'paiements_avance_utilises' => $totalPaiementsUtilises,
+                    'dette_fournisseur_finale' => $detteFournisseur,
+                    'solde_utilisateur' => $soldeActuel,
+                    'statut' => $statut,
+                    'stock_ajoute' => $statut === 'paye',
+                    'details_stock' => $statut === 'paye' ? [
+                        'global_ajoute' => $pvReception->poids_net,
+                        'utilisateur_ajoute' => $pvReception->poids_net,
+                        'utilisateur_id' => $pvReception->utilisateur_id
+                    ] : null,
+                    'details_paiements' => collect($paiementsUtilises)->map(function($item) {
+                        $paiement = $item['paiement'];
+                        return [
+                            'id' => $paiement->id,
+                            'reference' => $paiement->reference,
+                            'montant_total' => $paiement->montant,
+                            'montant_utilise_avant' => $paiement->montant_utilise - $item['montant_utilise'],
+                            'montant_utilise_ce_pv' => $item['montant_utilise'],
+                            'montant_utilise_total' => $paiement->montant_utilise,
+                            'montant_restant' => $paiement->montant_restant,
+                            'type' => $paiement->type,
+                            'statut' => $paiement->statut
+                        ];
+                    }),
+                    'reste_a_couvrir_par_paiements' => max(0, $montantACouvrirParPaiements - $totalPaiementsUtilises),
+                    'message_paiements' => $montantRestantACouvrir > 0 ? 
+                        '⚠️ Paiements d\'avance insuffisants, reste à payer: ' . number_format($montantRestantACouvrir, 0, ',', ' ') . ' Ar' :
+                        '✅ Paiements d\'avance suffisants'
+                ]
+            ], 201);
+
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors()
+            ], 422);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Erreur lors de la création du PV de réception: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la création du PV de réception',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Erreur interne du serveur'
+            ], 500);
+        }
     }
-}
 
     public function show(PVReception $pvReception): JsonResponse
     {

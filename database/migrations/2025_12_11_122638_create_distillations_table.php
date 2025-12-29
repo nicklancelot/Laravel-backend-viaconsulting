@@ -20,7 +20,7 @@ return new class extends Migration
             // Données de réception (provenant du PV)
             $table->string('numero_pv'); // Numéro du PV de réception
             $table->string('type_matiere_premiere'); // FG, CG, GG
-            $table->decimal('quantite_recue', 10, 2); // Poids net du PV
+            $table->decimal('quantite_recue', 10, 2); 
             $table->decimal('taux_humidite', 5, 2)->nullable();
             $table->decimal('taux_dessiccation', 5, 2)->nullable();
             
@@ -29,10 +29,19 @@ return new class extends Migration
             $table->date('date_debut')->nullable();
             $table->decimal('poids_distiller', 10, 2)->nullable();
             $table->string('usine')->nullable();
-            $table->integer('duree_distillation')->nullable(); // en heures
-            $table->decimal('poids_chauffage', 10, 2)->nullable();
-            $table->string('carburant')->nullable();
-            $table->decimal('main_oeuvre', 10, 2)->nullable();
+            $table->integer('duree_distillation')->nullable(); 
+
+            // Bois de chauffage
+            $table->decimal('quantite_bois_chauffage', 10, 2)->nullable(); // quantité en kg
+            $table->decimal('prix_bois_chauffage', 10, 2)->nullable(); // prix par kg
+
+            // Carburant
+            $table->decimal('quantite_carburant', 10, 2)->nullable(); // quantité en litres
+            $table->decimal('prix_carburant', 10, 2)->nullable(); // prix par litre
+
+            // Main d'œuvre
+            $table->decimal('nombre_ouvriers', 10, 2)->nullable(); // nombre d'ouvriers
+            $table->decimal('prix_main_oeuvre', 10, 2)->nullable(); // prix par ouvrier
             
             // Données de fin de distillation (à remplir)
             $table->string('reference')->nullable();

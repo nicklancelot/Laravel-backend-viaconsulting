@@ -23,6 +23,7 @@ return new class extends Migration
             $table->decimal('quantite_recue', 10, 2);
             $table->string('lieu_reception', 100);
             $table->string('type_livraison', 20)->nullable(); 
+            $table->string('type_produit', 50)->nullable(); 
           
             $table->timestamp('date_receptionne')->nullable();
             $table->timestamps();

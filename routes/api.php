@@ -2,8 +2,12 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CaissierController;
+use App\Http\Controllers\Dashboard\CollecteurControlleur;
+use App\Http\Controllers\Dashboard\DistillationDashController;
+use App\Http\Controllers\Dashboard\InfoCollecteurController;
 use App\Http\Controllers\DemandeSoldeController;
 use App\Http\Controllers\DestinateurControlleur;
+use App\Http\Controllers\Distillation\CarburantController;
 use App\Http\Controllers\Distillation\DistillationController;
 use App\Http\Controllers\Distillation\ExpeditionController;
 use App\Http\Controllers\Distillation\GestionSoldeController;
@@ -35,6 +39,10 @@ use App\Http\Controllers\TestHuille\HEValidationController;
 use App\Http\Controllers\TestHuille\StockheController;
 use App\Http\Controllers\TransfertController;
 use App\Http\Controllers\Vente\ReceptionController;
+use App\Http\Controllers\Vente\ClientController;
+use App\Http\Controllers\Vente\ExportationController;
+use App\Http\Controllers\Vente\LocalController;
+use App\Http\Controllers\Vente\HistoriqueVenteLocalExportationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -190,13 +198,15 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id}/paiement', [ImpayeController::class, 'enregistrerPaiement']);
     });
 
-    // Routes pour fiches de livraison pv reception
+        // Routes pour fiches de livraison pv reception
         Route::prefix('fiche-livraisons')->group(function () {
         Route::get('/', [FicheLivraisonController::class, 'index']);
         Route::post('/', [FicheLivraisonController::class, 'store']);
         Route::get('/{id}', [FicheLivraisonController::class, 'show']);
         Route::get('/distillateurs/disponibles', [FicheLivraisonController::class, 'getDistillateurs']);
         Route::get('/site-collecte/{nom}', [FicheLivraisonController::class, 'getBySiteCollecte']);
+        // Ajoutez cette nouvelle route
+        Route::get('/stocks/disponibles', [FicheLivraisonController::class, 'getStocksDisponiblesUtilisateur']);
         });
   // Routes pour stat fiche de livraison pv reception
     Route::prefix('fiche-statistique')->group(function () {
@@ -258,19 +268,22 @@ Route::middleware('auth:sanctum')->group(function () {
             
     });
 
-    // Routes pour les fiches de livraison
-    Route::prefix('he-fiche-livraisons')->group(function () {
-            Route::get('/', [HEFicheLivraisonController::class, 'index']);
-            Route::post('/', [HEFicheLivraisonController::class, 'store']);
-            Route::get('/livreurs', [HEFicheLivraisonController::class, 'getLivreurs']);
-            Route::get('/destinateurs', [HEFicheLivraisonController::class, 'getVendeurs']);
-            Route::get('/{id}', [HEFicheLivraisonController::class, 'show']);
-            Route::put('/{id}', [HEFicheLivraisonController::class, 'update']);
-            Route::delete('/{id}', [HEFicheLivraisonController::class, 'destroy']);
-            Route::get('/fiche/{fiche_reception_id}', [HEFicheLivraisonController::class, 'getByFicheReception']);
-            Route::post('/{id}/annuler', [HEFicheLivraisonController::class, 'annulerLivraison']);
-
-    });
+        // Dans routes/api.php
+        Route::prefix('he-fiche-livraisons')->group(function () {
+        Route::get('/', [HEFicheLivraisonController::class, 'index']);
+        Route::post('/', [HEFicheLivraisonController::class, 'store']);
+        Route::get('/{id}', [HEFicheLivraisonController::class, 'show']);
+        Route::put('/{id}', [HEFicheLivraisonController::class, 'update']);
+        Route::delete('/{id}', [HEFicheLivraisonController::class, 'destroy']);
+        Route::get('/livreurs/disponibles', [HEFicheLivraisonController::class, 'getLivreurs']);
+        Route::get('/vendeurs/disponibles', [HEFicheLivraisonController::class, 'getVendeurs']);
+        Route::get('/etat-stock', [HEFicheLivraisonController::class, 'getEtatStock']);
+        Route::post('/annuler/{id}', [HEFicheLivraisonController::class, 'annulerLivraison']);
+        Route::post('/verifier-stock', [HEFicheLivraisonController::class, 'verifierStockDisponible']);
+        Route::get('/stocks/disponibles', [HEFicheLivraisonController::class, 'getStocksDisponiblesUtilisateur']);
+        // Nouvelle route pour vérifier si on peut créer une fiche
+        Route::get('/verifier-creation', [HEFicheLivraisonController::class, 'peutCreerFicheLivraison']);
+        });
 
     // Routes pour la gestion des livraisons Huille Essentiel
     Route::prefix('he-livraisons')->group(function () {
@@ -293,6 +306,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('livreurs')->group(function () {
             Route::get('/', [LivreurControlleur::class, 'index']);
             Route::post('/', [LivreurControlleur::class, 'store']);
+            Route::get('/stats', [LivreurControlleur::class, 'stats']);
             Route::get('/{id}', [LivreurControlleur::class, 'show']);
             Route::put('/{id}', [LivreurControlleur::class, 'update']);
             Route::delete('/{id}', [LivreurControlleur::class, 'destroy']);
@@ -319,46 +333,87 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{distillationId}/demarrer', [DistillationController::class, 'demarrerDistillation']);
         Route::post('/{distillationId}/terminer', [DistillationController::class, 'terminerDistillation']);
         });
-    //Transport 
-    Route::prefix('transports')->group(function () {
-        
-            Route::get('/distillations-sans-transport', [TransportController::class, 'getDistillationsSansTransport']);
-            Route::get('/vendeurs-disponibles', [TransportController::class, 'getVendeursDisponibles']);
-            Route::get('/livreurs-disponibles', [TransportController::class, 'getLivreursDisponibles']);
+//Transport 
+Route::prefix('transports')->group(function () {
+    
+    Route::get('/distillations-sans-transport', [TransportController::class, 'getDistillationsSansTransport']);
+    Route::get('/distillations-disponibles', [TransportController::class, 'getDistillationsDisponibles']); // NOUVELLE
+    
+    Route::get('/vendeurs-disponibles', [TransportController::class, 'getVendeursDisponibles']);
+    Route::get('/livreurs-disponibles', [TransportController::class, 'getLivreursDisponibles']);
 
-            Route::post('/creer', [TransportController::class, 'creerTransport']);
-            Route::get('/en-cours', [TransportController::class, 'getTransportsEnCours']);
-            Route::get('/livre', [TransportController::class, 'getTransportsLivre']);
-            Route::post('/{transportId}/livre', [TransportController::class, 'marquerLivre']);
-            Route::get('/mes-transports', [TransportController::class, 'getMesTransports']);
-    });
+    // Route de création (accepte maintenant un tableau de transports)
+    Route::post('/creer', [TransportController::class, 'creerTransport']);
+    
+    // Route pour voir ses propres transports avec filtres
+    Route::get('/mes-transports', [TransportController::class, 'getMesTransports']);
+    
+    // Routes existantes
+    Route::get('/en-cours', [TransportController::class, 'getTransportsEnCours']);
+    Route::get('/livre', [TransportController::class, 'getTransportsLivre']);
+    Route::post('/{transportId}/livre', [TransportController::class, 'marquerLivre']);
+});
 
 
 
         Route::prefix('matiere-premiere/stock')->group(function () {
-        Route::get('/', [StockPvReceptionController::class, 'getEtatStock']);
+                Route::get('/', [StockPvReceptionController::class, 'getEtatStock']);
+                Route::get('/utilisateur/{userId?}', [StockPvReceptionController::class, 'getStockUtilisateur']);
+                // Routes pour compatibilité (version simple sans utilisateur)
+                Route::get('/stock-he/simple', [StockheController::class, 'getEtatStockSimple']);
+                Route::get('/stock-he/verifier-simple', [StockheController::class, 'verifierDisponibiliteSimple']);
 
         });
 
         Route::prefix('stock-he')->group(function () {
         Route::get('/', [StockheController::class, 'getEtatStock']);
-        Route::post('/verifier', [StockheController::class, 'verifierDisponibilite']);
+        Route::get('/verifier', [StockheController::class, 'verifierDisponibilite']);
+        // Routes Admin seulement
+        Route::get('/tous-utilisateurs', [StockheController::class, 'getStockTousUtilisateurs']);
+        Route::get('/utilisateur/{userId}', [StockheController::class, 'getStockUtilisateur']);
+        Route::get('/liste-utilisateurs', [StockheController::class, 'getListeUtilisateurs']);
+        
+        // Route simple pour compatibilité
+        Route::get('/simple', [StockheController::class, 'getEtatStockSimple']);
         });
 
-        // Dans routes/api.php
-        Route::prefix('receptions')->group(function () {
-        Route::get('/', [ReceptionController::class, 'index']);
-        Route::post('/', [ReceptionController::class, 'store']);
-        Route::get('/statut/{statut}', [ReceptionController::class, 'getByStatut']);
-        Route::get('/fiche-livraison/{ficheLivraisonId}', [ReceptionController::class, 'getByFicheLivraison']);
-        Route::get('/transport/{transportId}', [ReceptionController::class, 'getByTransport']);
-        Route::get('/mes-receptions', [ReceptionController::class, 'getMesReceptions']);
-        Route::get('/{id}', [ReceptionController::class, 'show']);
-        Route::put('/{id}', [ReceptionController::class, 'update']);
-        Route::delete('/{id}', [ReceptionController::class, 'destroy']);
-        Route::post('/{id}/marquer-receptionne', [ReceptionController::class, 'marquerReceptionne']);
-        Route::post('/{id}/annuler', [ReceptionController::class, 'marquerAnnule']);
+// Dans routes/api.php
+Route::prefix('receptions')->group(function () {
+    Route::get('/', [ReceptionController::class, 'index']);
+    Route::get('/recues', [ReceptionController::class, 'getRecues']);
+    Route::get('/mes-receptions', [ReceptionController::class, 'getMesReceptions']);
+    Route::get('/stats-cartes', [ReceptionController::class, 'getStatsCartes']); // AJOUTER CETTE LIGNE
+    Route::post('/{id}/marquer-receptionne', [ReceptionController::class, 'marquerReceptionne']);
+});
+         // Clients 
+         Route::prefix('clients')->group(function () {
+          Route::get('/', [ClientController::class, 'index']);
+          Route::post('/', [ClientController::class, 'store']);
+          Route::get('/{client}', [ClientController::class, 'show']);
+          Route::put('/{client}', [ClientController::class, 'update']);
+          Route::delete('/{client}', [ClientController::class, 'destroy']);
+         });
+
+        // Exportations 
+        Route::prefix('exportations')->group(function () {
+          Route::get('/', [ExportationController::class, 'index']);
+          Route::post('/', [ExportationController::class, 'store']);
+          Route::get('/{exportation}', [ExportationController::class, 'show']);
+          Route::put('/{exportation}', [ExportationController::class, 'update']);
+          Route::delete('/{exportation}', [ExportationController::class, 'destroy']);
         });
+
+        // Vente locale
+        Route::prefix('locals')->group(function () {
+          Route::get('/', [LocalController::class, 'index']);
+          Route::post('/', [LocalController::class, 'store']);
+          Route::get('/{local}', [LocalController::class, 'show']);
+          Route::put('/{local}', [LocalController::class, 'update']);
+          Route::delete('/{local}', [LocalController::class,'destroy']);
+        });
+
+        // Historique: affiche locals et exportations
+        Route::get('/historique-vente', [HistoriqueVenteLocalExportationController::class, 'index']);
 
       
         Route::prefix('distillation-stat')->group(function () {
@@ -375,5 +430,60 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/historique-retraits', [GestionSoldeController::class, 'historiqueRetraits']);
         Route::get('/detail-retrait/{id}', [GestionSoldeController::class, 'detailRetrait']);
         });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// routes/api.php Collecte
+Route::prefix('dashboard')->group(function () {
+    Route::get('collecteur/tableau-de-bord', [CollecteurControlleur::class, 'tableauDeBord']);
+    Route::get('collecteur/stats-rapides', [CollecteurControlleur::class, 'statsRapides']);
+    Route::get('collecteur/localisation/{id}', [CollecteurControlleur::class, 'detailsLocalisation']);
+});
+
+//Rapport collecteur
+Route::prefix('dashboard-2')->group(function () {
+    Route::get('collecteurs', [InfoCollecteurController::class, 'listeCollecteurs']);
+    Route::get('collecteurs/{id}', [InfoCollecteurController::class, 'detailsCollecteur']);
+    Route::get('collecteurs/localisation/{id}', [InfoCollecteurController::class, 'getCollecteursParLocalisation']);
+    Route::get('collecteurs/rechercher', [InfoCollecteurController::class, 'rechercherCollecteurs']);
+    Route::get('collecteurs/dashboard/resume', [InfoCollecteurController::class, 'dashboardResume']);
+});
+
+//Distillation
+Route::prefix('dashboard-3')->group(function () {
+    Route::get('/stock-huile-essentielle', [DistillationDashController::class, 'getStockHuileEssentielle']);
+    Route::get('/resume-production', [DistillationDashController::class, 'getResumeProduction']);
+    Route::get('/usines-disponibles', [DistillationDashController::class, 'getUsinesDisponibles']);
+    Route::get('/complet', [DistillationDashController::class, 'getDashboardComplet']);
+    Route::get('/statistiques-temps-reel', [DistillationDashController::class, 'getStatistiquesTempsReel']);
+    Route::get('/rendement-moyen', [DistillationDashController::class, 'getRendementMoyen']);
+    Route::get('/tendances-production', [DistillationDashController::class, 'getTendancesProduction']);
+    Route::get('/statistiques-distilleur', [DistillationDashController::class, 'getStatistiquesParDistilleur']);
+    Route::get('/alertes-stock-bas', [DistillationDashController::class, 'getAlertesStockBas']);
+});
 
 });

@@ -22,10 +22,10 @@ class TransportController extends Controller
         try {
             $user = Auth::user();
             
-            if ($user->role !== 'distilleur') {
+            if (!in_array($user->role, ['distilleur', 'admin'])) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Accès réservé aux distillateurs'
+                    'message' => 'Accès réservé aux distillateurs et administrateurs'
                 ], 403);
             }
 
@@ -134,134 +134,169 @@ class TransportController extends Controller
     /**
      * Créer un transport (statut: en_cours par défaut)
      */
-    public function creerTransport(Request $request): JsonResponse
-    {
-        try {
-            $user = Auth::user();
-            
-            if ($user->role !== 'distilleur') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Accès réservé aux distillateurs'
-                ], 403);
-            }
+   /**
+ * Créer un transport (statut: en_cours par défaut)
+ */
 
-            $validator = Validator::make($request->all(), [
-                'distillation_id' => 'required|exists:distillations,id',
-                'vendeur_id' => 'required|exists:utilisateurs,id',
-                'livreur_id' => 'required|exists:livreurs,id',
-                'date_transport' => 'required|date',
-                'site_destination' => 'required|string|max:100',
-                'type_matiere' => 'required|string|max:50',
-                'quantite_a_livrer' => 'required|numeric|min:0',
-                'ristourne_regionale' => 'nullable|numeric|min:0',
-                'ristourne_communale' => 'nullable|numeric|min:0',
-                'observations' => 'nullable|string'
-            ]);
+public function creerTransport(Request $request): JsonResponse
+{
+    try {
+        $user = Auth::user();
+        
+        if (!in_array($user->role, ['distilleur', 'admin'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Accès réservé aux distillateurs et administrateurs'
+            ], 403);
+        }
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Erreur de validation',
-                    'errors' => $validator->errors()
-                ], 422);
-            }
+        $validator = Validator::make($request->all(), [
+            'distillation_id' => 'required|exists:distillations,id',
+            'transports' => 'required|array|min:1',
+            'transports.*.vendeur_id' => 'required|exists:utilisateurs,id',
+            'transports.*.livreur_id' => 'required|exists:livreurs,id',
+            'transports.*.date_transport' => 'required|date',
+            'transports.*.site_destination' => 'required|string|max:100',
+            'transports.*.type_matiere' => 'required|string|max:50',
+            'transports.*.quantite_a_livrer' => 'required|numeric|min:0.1',
+            'transports.*.ristourne_regionale' => 'nullable|numeric|min:0',
+            'transports.*.ristourne_communale' => 'nullable|numeric|min:0',
+            'transports.*.observations' => 'nullable|string'
+        ]);
 
-            // Vérifier que la distillation appartient au distilleur connecté
-            $distillation = Distillation::where('id', $request->distillation_id)
-                ->whereHas('expedition.ficheLivraison', function($query) use ($user) {
-                    $query->where('distilleur_id', $user->id);
-                })
-                ->with(['expedition.ficheLivraison.distilleur.siteCollecte'])
-                ->first();
-            
-            if (!$distillation) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Distillation non trouvée ou non autorisée'
-                ], 404);
-            }
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur de validation',
+                'errors' => $validator->errors()
+            ], 422);
+        }
 
-            // Vérifier que la distillation est terminée
-            if ($distillation->statut !== 'termine') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'La distillation doit être terminée avant transport. Statut actuel: ' . $distillation->statut
-                ], 400);
-            }
+        // Vérifier que la distillation appartient au distilleur connecté
+        $distillation = Distillation::where('id', $request->distillation_id)
+            ->whereHas('expedition.ficheLivraison', function($query) use ($user) {
+                $query->where('distilleur_id', $user->id);
+            })
+            ->with(['expedition.ficheLivraison.distilleur.siteCollecte'])
+            ->first();
+        
+        if (!$distillation) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Distillation non trouvée ou non autorisée'
+            ], 404);
+        }
 
-            // Vérifier qu'il n'y a pas déjà un transport pour cette distillation
-            $transportExistant = Transport::where('distillation_id', $distillation->id)->first();
-            if ($transportExistant) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Un transport existe déjà pour cette distillation'
-                ], 400);
-            }
+        // Vérifier que la distillation est terminée
+        if ($distillation->statut !== 'termine') {
+            return response()->json([
+                'success' => false,
+                'message' => 'La distillation doit être terminée avant transport. Statut actuel: ' . $distillation->statut
+            ], 400);
+        }
 
-            // Vérifier la quantité disponible
-            if ($distillation->quantite_resultat < $request->quantite_a_livrer) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Quantité insuffisante. Disponible: ' . $distillation->quantite_resultat . ' Demandé: ' . $request->quantite_a_livrer
-                ], 400);
-            }
+        // Calculer la quantité totale demandée
+        $quantiteTotaleDemandee = collect($request->transports)->sum('quantite_a_livrer');
+        
+        // Vérifier que la quantité totale ne dépasse pas la quantité disponible
+        if ($quantiteTotaleDemandee > $distillation->quantite_resultat) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Quantité totale demandée ('.$quantiteTotaleDemandee.') dépasse la quantité disponible ('.$distillation->quantite_resultat.')',
+                'quantite_disponible' => $distillation->quantite_resultat,
+                'quantite_demandee' => $quantiteTotaleDemandee
+            ], 400);
+        }
 
-            // Vérifier que le vendeur a bien le rôle vendeur
-            $vendeur = Utilisateur::where('id', $request->vendeur_id)
+        // Récupérer le site de collecte du distilleur
+        $lieuDepart = $distillation->expedition->ficheLivraison->distilleur->siteCollecte->Nom ?? 'PK 12';
+
+        $transportsCrees = [];
+        $receptionsCrees = [];
+        $quantiteInitiale = $distillation->quantite_resultat;
+
+        foreach ($request->transports as $transportData) {
+            // Vérifier que le vendeur est bien un vendeur
+            $vendeur = Utilisateur::where('id', $transportData['vendeur_id'])
                 ->where('role', 'vendeur')
                 ->first();
             
             if (!$vendeur) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'L\'utilisateur sélectionné doit être un vendeur'
+                    'message' => 'L\'utilisateur avec ID ' . $transportData['vendeur_id'] . ' doit être un vendeur'
                 ], 400);
             }
 
-            // Récupérer le site de collecte du distilleur (lieu de départ)
-            $lieuDepart = $distillation->expedition->ficheLivraison->distilleur->siteCollecte->Nom ?? 'PK 12';
-
-            // Créer le transport avec statut "en_cours" par défaut
+            // IMPORTANT: Créer le transport avec statut "livre" directement
             $transport = Transport::create([
                 'distillation_id' => $distillation->id,
                 'vendeur_id' => $vendeur->id,
-                'livreur_id' => $request->livreur_id,
-                'date_transport' => $request->date_transport,
+                'livreur_id' => $transportData['livreur_id'],
+                'date_transport' => $transportData['date_transport'],
                 'lieu_depart' => $lieuDepart,
-                'site_destination' => $request->site_destination,
-                'type_matiere' => $request->type_matiere,
-                'quantite_a_livrer' => $request->quantite_a_livrer,
-                'ristourne_regionale' => $request->ristourne_regionale ?? 0,
-                'ristourne_communale' => $request->ristourne_communale ?? 0,
-                'observations' => $request->observations,
-                'statut' => 'en_cours' // Statut par défaut
+                'site_destination' => $transportData['site_destination'],
+                'type_matiere' => $transportData['type_matiere'],
+                'quantite_a_livrer' => $transportData['quantite_a_livrer'],
+                'ristourne_regionale' => $transportData['ristourne_regionale'] ?? 0,
+                'ristourne_communale' => $transportData['ristourne_communale'] ?? 0,
+                'observations' => $transportData['observations'] ?? null,
+                'statut' => 'livre', // CHANGEMENT ICI: "livre" au lieu de "en_cours"
+                'date_livraison' => $transportData['date_transport'], // Date de livraison = date de transport
+                'created_by' => $user->id
             ]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Transport créé avec succès (en cours)',
-                'data' => $transport->load([
-                    'distillation.expedition.ficheLivraison.distilleur.siteCollecte',
-                    'livreur',
-                    'vendeur'
-                ]),
-                'distilleur_info' => [
-                    'id' => $user->id,
-                    'nom_complet' => $user->nom . ' ' . $user->prenom,
-                    'site_collecte' => $user->siteCollecte->Nom ?? 'Non défini'
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors de la création du transport',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
-            ], 500);
+            $transportsCrees[] = $transport;
+            
+            // Vérifier si une réception a été créée automatiquement
+            try {
+                $reception = \App\Models\Vente\Reception::where('transport_id', $transport->id)->first();
+                if ($reception) {
+                    $receptionsCrees[] = $reception;
+                } else {
+                    Log::warning('Aucune réception créée automatiquement pour le transport ID: ' . $transport->id);
+                }
+            } catch (\Exception $e) {
+                Log::error('Erreur vérification réception: ' . $e->getMessage());
+            }
         }
-    }
 
+        // Recharger la distillation pour avoir la quantité mise à jour
+        $distillation->refresh();
+
+        return response()->json([
+            'success' => true,
+            'message' => count($transportsCrees) . ' transport(s) créé(s) avec succès. ' . 
+                        count($receptionsCrees) . ' réception(s) créée(s) automatiquement.',
+            'data' => [
+                'distillation' => $distillation->load(['expedition.ficheLivraison.distilleur.siteCollecte']),
+                'transports' => $transportsCrees,
+                'receptions' => $receptionsCrees,
+                'quantites' => [
+                    'initial' => $quantiteInitiale,
+                    'totale_demandee' => $quantiteTotaleDemandee,
+                    'nouvelle_disponible' => $distillation->quantite_resultat,
+                    'pourcentage_utilise' => ($quantiteInitiale > 0) 
+                        ? ($quantiteTotaleDemandee / $quantiteInitiale) * 100 
+                        : 0
+                ]
+            ],
+            'distilleur_info' => [
+                'id' => $user->id,
+                'nom_complet' => $user->nom . ' ' . $user->prenom,
+                'site_collecte' => $user->siteCollecte->Nom ?? 'Non défini'
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Erreur création transport: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Erreur lors de la création des transports',
+            'error' => env('APP_DEBUG') ? $e->getMessage() : null
+        ], 500);
+    }
+}
     /**
      * Récupérer les transports en cours (pour le distilleur connecté)
      */
@@ -270,10 +305,10 @@ class TransportController extends Controller
         try {
             $user = Auth::user();
             
-            if ($user->role !== 'distilleur') {
+            if (!in_array($user->role, ['distilleur', 'admin'])) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Accès réservé aux distillateurs'
+                    'message' => 'Accès réservé aux distillateurs et administrateurs'
                 ], 403);
             }
 
@@ -317,10 +352,10 @@ class TransportController extends Controller
         try {
             $user = Auth::user();
             
-            if ($user->role !== 'distilleur') {
+            if (!in_array($user->role, ['distilleur', 'admin'])) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Accès réservé aux distillateurs'
+                    'message' => 'Accès réservé aux distillateurs et administrateurs'
                 ], 403);
             }
 
@@ -364,10 +399,10 @@ class TransportController extends Controller
         try {
             $user = Auth::user();
             
-            if ($user->role !== 'distilleur') {
+            if (!in_array($user->role, ['distilleur', 'admin'])) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Accès réservé aux distillateurs'
+                    'message' => 'Accès réservé aux distillateurs et administrateurs'
                 ], 403);
             }
 
@@ -422,15 +457,16 @@ class TransportController extends Controller
     /**
      * Récupérer tous les transports du distilleur connecté
      */
+
     public function getMesTransports(): JsonResponse
     {
         try {
             $user = Auth::user();
             
-            if ($user->role !== 'distilleur') {
+            if (!in_array($user->role, ['distilleur', 'admin'])) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Accès réservé aux distillateurs'
+                    'message' => 'Accès réservé aux distillateurs et administrateurs'
                 ], 403);
             }
 
@@ -473,4 +509,67 @@ class TransportController extends Controller
             ], 500);
         }
     }
+public function getDistillationsDisponibles(): JsonResponse
+{
+    try {
+        $user = Auth::user();
+        
+        if (!in_array($user->role, ['distilleur', 'admin'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Accès réservé aux distillateurs et administrateurs'
+            ], 403);
+        }
+
+        $distillations = Distillation::where('statut', 'termine')
+            ->whereHas('expedition.ficheLivraison', function($query) use ($user) {
+                $query->where('distilleur_id', $user->id);
+            })
+            ->with(['expedition.ficheLivraison.distilleur.siteCollecte'])
+            ->orderBy('date_fin', 'desc')
+            ->get();
+
+        // Calculer les quantités disponibles SANS utiliser la relation transports()
+        $distillations->each(function ($distillation) {
+            // Récupérer les transports via une requête séparée
+            $transports = Transport::where('distillation_id', $distillation->id)
+                ->where('statut', 'en_cours')
+                ->get();
+            
+            $quantiteDejaTransportee = $transports->sum('quantite_a_livrer');
+            
+            $distillation->quantite_disponible = $distillation->quantite_resultat - $quantiteDejaTransportee;
+            $distillation->peut_creer_transport = $distillation->quantite_disponible > 0;
+            $distillation->nombre_transports = $transports->count();
+            $distillation->transports = $transports; // Ajouter les transports à l'objet
+        });
+
+        // Filtrer seulement celles avec de la quantité disponible
+        $distillationsDisponibles = $distillations->where('quantite_disponible', '>', 0)->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'data' => $distillationsDisponibles,
+                'stats' => [
+                    'total_disponibles' => $distillationsDisponibles->count(),
+                    'quantite_totale_disponible' => $distillationsDisponibles->sum('quantite_disponible'),
+                    'distillations_completement_transportees' => $distillations->count() - $distillationsDisponibles->count()
+                ]
+            ],
+            'distilleur_info' => [
+                'id' => $user->id,
+                'nom_complet' => $user->nom . ' ' . $user->prenom,
+                'site_collecte' => $user->siteCollecte->Nom ?? 'Non défini'
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Erreur lors de la récupération des distillations disponibles',
+            'error' => env('APP_DEBUG') ? $e->getMessage() : null
+        ], 500);
+    }
+}
 }

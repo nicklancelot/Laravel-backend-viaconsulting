@@ -114,9 +114,9 @@ public function store(Request $request)
             $fiche->update(['statut' => $statutPaiement]);
 
             // ✅ AJOUTER AU STOCK SI LE NOUVEAU STATUT EST "payé"
-            if ($statutPaiement === 'payé') {
-                Stockhe::ajouterStock($fiche->quantite_totale);
-            }
+        if ($statutPaiement === 'payé') {
+            Stockhe::ajouterStock($fiche->quantite_totale, $fiche->utilisateur_id);
+        }
 
             $impaye = HEImpaye::updateOrCreate(
                 ['facturation_id' => $validated['facturation_id']],
