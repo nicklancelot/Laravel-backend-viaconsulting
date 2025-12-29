@@ -11,9 +11,10 @@ return new class extends Migration
         Schema::create('transports', function (Blueprint $table) {
             $table->id();
             $table->foreignId('distillation_id')->constrained('distillations')->onDelete('cascade');
+             $table->foreignId('stock_id')->nullable()->constrained('stocks')->onDelete('cascade'); 
             $table->foreignId('vendeur_id')->constrained('utilisateurs')->onDelete('cascade'); 
             $table->foreignId('livreur_id')->constrained('livreurs')->onDelete('cascade');
-            
+           
             // Informations de transport
             $table->date('date_transport');
             $table->string('lieu_depart'); 

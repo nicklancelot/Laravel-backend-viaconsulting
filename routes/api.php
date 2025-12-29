@@ -12,6 +12,7 @@ use App\Http\Controllers\Distillation\DistillationController;
 use App\Http\Controllers\Distillation\ExpeditionController;
 use App\Http\Controllers\Distillation\GestionSoldeController;
 use App\Http\Controllers\Distillation\StatistiqueController;
+use App\Http\Controllers\Distillation\StockDistillationController;
 use App\Http\Controllers\Distillation\TransportController;
 use App\Http\Controllers\LivreurControlleur;
 use App\Http\Controllers\LocalisationController;
@@ -44,6 +45,7 @@ use App\Http\Controllers\Vente\ExportationController;
 use App\Http\Controllers\Vente\LocalController;
 use App\Http\Controllers\Vente\HistoriqueVenteLocalExportationController;
 use Illuminate\Http\Request;
+
 use Illuminate\Support\Facades\Route;
 
 
@@ -451,8 +453,12 @@ Route::prefix('receptions')->group(function () {
 
 
 
-
-
+Route::prefix('stocks-distillation')->group(function () {
+    Route::get('/', [StockDistillationController::class, 'index']);
+    Route::get('/disponibles', [StockDistillationController::class, 'getStocksDisponibles']);
+    Route::get('/lots/{typeProduit}', [StockDistillationController::class, 'getLotsParType']); // Nouvelle
+    Route::get('/historique', [StockDistillationController::class, 'getHistoriqueMouvements']); // Nouvelle
+});
 
 
 

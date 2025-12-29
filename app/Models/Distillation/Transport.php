@@ -7,11 +7,13 @@ use App\Models\Utilisateur;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class Transport extends Model
 {
     protected $fillable = [
         'distillation_id',
+        'stock_id',
         'vendeur_id',
         'livreur_id',
         'date_transport',
@@ -27,19 +29,59 @@ class Transport extends Model
     ];
 
     /**
+     * Relation avec la distillation
+     */
+    public function distillation(): BelongsTo
+    {
+        return $this->belongsTo(Distillation::class);
+    }
+
+    /**
+     * Relation avec le stock
+     */
+    public function stock(): BelongsTo
+    {
+        return $this->belongsTo(Stock::class);
+    }
+
+    /**
+     * Relation avec le livreur
+     */
+    public function livreur(): BelongsTo
+    {
+        return $this->belongsTo(Livreur::class);
+    }
+
+    /**
+     * Relation avec le vendeur
+     */
+    public function vendeur(): BelongsTo
+    {
+        return $this->belongsTo(Utilisateur::class, 'vendeur_id');
+    }
+
+    /**
      * Boot method pour créer automatiquement les réceptions
      */
-  protected static function boot()
+    protected static function boot()
     {
         parent::boot();
 
-        // Quand un transport est créé
+        // Quand un transport est créé avec statut "livre"
         static::created(function ($transport) {
             try {
-                // 1. Mettre à jour la quantité dans la distillation
-                $transport->mettreAJourQuantiteDistillation();
+                // Mettre à jour la quantité dans le stock
+                if ($transport->stock_id && $transport->estLivre()) {
+                    $stock = $transport->stock;
+                    if ($stock) {
+                        $stock->sortirQuantite($transport->quantite_a_livrer);
+                        Log::info('Quantité sortie du stock - Transport ID: ' . $transport->id . 
+                                 ', Stock ID: ' . $stock->id . 
+                                 ', Quantité: ' . $transport->quantite_a_livrer);
+                    }
+                }
                 
-                // 2. Si le statut est "livre", créer la réception automatique
+                // Si le statut est "livre", créer la réception automatique
                 if ($transport->estLivre()) {
                     Log::info('Transport créé avec statut "livre" - ID: ' . $transport->id);
                     $transport->creerReceptionAutomatique();
@@ -58,67 +100,7 @@ class Transport extends Model
                 $transport->creerReceptionAutomatique();
             }
         });
-
-        // Quand un transport est supprimé
-        static::deleted(function ($transport) {
-            try {
-                $transport->restaurerQuantiteDistillation();
-                Log::info('Transport supprimé - ID: ' . $transport->id . ', Quantité restaurée');
-            } catch (\Exception $e) {
-                Log::error('Erreur lors de la restauration de la distillation: ' . $e->getMessage());
-            }
-        });
-    
     }
-
-    /**
-     * Mettre à jour la quantité restante dans la distillation
-     */
-    public function mettreAJourQuantiteDistillation(): void
-    {
-        $distillation = $this->distillation;
-        
-        if (!$distillation) {
-            Log::warning('Distillation non trouvée pour transport ID: ' . $this->id);
-            return;
-        }
-
-        // Vérifier qu'il y a assez de quantité disponible
-        if ($distillation->quantite_resultat < $this->quantite_a_livrer) {
-            throw new \Exception('Quantité insuffisante dans la distillation. Disponible: ' . $distillation->quantite_resultat . ', Demandée: ' . $this->quantite_a_livrer);
-        }
-
-        // Diminuer la quantité_resultat
-        $nouvelleQuantite = max(0, $distillation->quantite_resultat - $this->quantite_a_livrer);
-        
-        $distillation->update([
-            'quantite_resultat' => $nouvelleQuantite
-        ]);
-
-        Log::info('Quantité distillation mise à jour - ID: ' . $distillation->id . 
-                 ', Ancienne quantité: ' . $distillation->getOriginal('quantite_resultat') . 
-                 ', Nouvelle quantité: ' . $nouvelleQuantite . 
-                 ', Transport ID: ' . $this->id);
-    }
-
-    /**
-     * Restaurer la quantité dans la distillation quand un transport est supprimé
-     */
-    public function restaurerQuantiteDistillation(): void
-    {
-        $distillation = Distillation::find($this->distillation_id);
-        
-        if ($distillation) {
-            $distillation->increment('quantite_resultat', $this->quantite_a_livrer);
-            
-            Log::info('Quantité distillation restaurée - Distillation ID: ' . $distillation->id . 
-                     ', Transport ID: ' . $this->id . 
-                     ', Quantité restaurée: ' . $this->quantite_a_livrer);
-        } else {
-            Log::warning('Distillation non trouvée pour restaurer quantité - Transport ID: ' . $this->id);
-        }
-    }
-
 
     /**
      * Créer une réception automatique
@@ -158,41 +140,26 @@ class Transport extends Model
         }
     }
 
-
-    /**
-     * Relation avec la distillation
-     */
-    public function distillation(): BelongsTo
-    {
-        return $this->belongsTo(Distillation::class);
-    }
-
-    /**
-     * Relation avec le livreur
-     */
-    public function livreur(): BelongsTo
-    {
-        return $this->belongsTo(Livreur::class);
-    }
-
-    /**
-     * Relation avec le vendeur
-     */
-    public function vendeur(): BelongsTo
-    {
-        return $this->belongsTo(Utilisateur::class, 'vendeur_id');
-    }
-
     /**
      * Marquer comme livré (et créer automatiquement une réception)
      */
     public function marquerLivre(string $observations = null): void
     {
-        $this->update([
-            'statut' => 'livre',
-            'date_livraison' => now()->format('Y-m-d'),
-            'observations' => $observations ?? $this->observations
-        ]);
+        DB::transaction(function () use ($observations) {
+            // Sortir la quantité du stock
+            if ($this->stock) {
+                $this->stock->sortirQuantite($this->quantite_a_livrer);
+            }
+            
+            $this->update([
+                'statut' => 'livre',
+                'date_livraison' => now()->format('Y-m-d'),
+                'observations' => $observations ?? $this->observations
+            ]);
+            
+            // Créer réception automatique
+            $this->creerReceptionAutomatique();
+        });
     }
 
     /**

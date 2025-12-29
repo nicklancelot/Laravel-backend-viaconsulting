@@ -32,6 +32,8 @@ class Distillation extends Model
         'prix_carburant',
         // Main d'œuvre
         'nombre_ouvriers',
+        'heures_travail_par_ouvrier',
+        'prix_heure_main_oeuvre',
         'prix_main_oeuvre',
         // Données de fin
         'reference',
@@ -52,6 +54,28 @@ class Distillation extends Model
     ];
 
     /**
+     * Boot method pour calculer automatiquement le prix total de la main d'œuvre
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($distillation) {
+            $distillation->calculerPrixMainOeuvre();
+        });
+    }
+
+    /**
+     * Calculer le prix total de la main d'œuvre
+     */
+    public function calculerPrixMainOeuvre(): void
+    {
+        if ($this->nombre_ouvriers && $this->heures_travail_par_ouvrier && $this->prix_heure_main_oeuvre) {
+            $this->prix_main_oeuvre = $this->nombre_ouvriers * $this->heures_travail_par_ouvrier * $this->prix_heure_main_oeuvre;
+        }
+    }
+
+    /**
      * Relation avec l'expédition
      */
     public function expedition(): BelongsTo
@@ -65,6 +89,14 @@ class Distillation extends Model
     public function transports(): HasMany
     {
         return $this->hasMany(Transport::class);
+    }
+
+    /**
+     * Relation avec le stock
+     */
+    public function stock()
+    {
+        return $this->hasOne(Stock::class);
     }
 
     /**
@@ -84,11 +116,24 @@ class Distillation extends Model
      */
     public function terminer(array $donneesFin)
     {
-        $this->update(array_merge($donneesFin, [
-            'statut' => 'termine'
-        ]));
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        
+        try {
+            $this->update(array_merge($donneesFin, [
+                'statut' => 'termine'
+            ]));
 
-        return $this;
+            // Créer automatiquement l'entrée en stock
+            Stock::creerDepuisDistillation($this);
+            
+            \Illuminate\Support\Facades\DB::commit();
+            
+            return $this;
+            
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            throw $e;
+        }
     }
 
     /**
@@ -113,6 +158,14 @@ class Distillation extends Model
     public function estTerminee(): bool
     {
         return $this->statut === 'termine';
+    }
+
+    /**
+     * Vérifier si le stock a été créé
+     */
+    public function aStock(): bool
+    {
+        return $this->stock !== null;
     }
 
     /**
@@ -207,6 +260,25 @@ class Distillation extends Model
     }
 
     /**
+     * Calculer le nombre total d'heures de travail
+     */
+    public function getHeuresTravailTotalesAttribute(): float
+    {
+        if ($this->nombre_ouvriers && $this->heures_travail_par_ouvrier) {
+            return $this->nombre_ouvriers * $this->heures_travail_par_ouvrier;
+        }
+        return 0;
+    }
+
+    /**
+     * Formater les heures totales de travail
+     */
+    public function getHeuresTravailTotalesFormateAttribute(): string
+    {
+        return number_format($this->heures_travail_totales, 1) . ' heures';
+    }
+
+    /**
      * Calculer le coût total du bois de chauffage
      */
     public function getCoutBoisChauffageAttribute(): float
@@ -245,13 +317,20 @@ class Distillation extends Model
     }
 
     /**
-     * Calculer le coût total de la main d'œuvre
+     * Calculer le coût total de la main d'œuvre (attribut calculé)
      */
     public function getCoutMainOeuvreAttribute(): float
     {
-        if ($this->nombre_ouvriers && $this->prix_main_oeuvre) {
-            return $this->nombre_ouvriers * $this->prix_main_oeuvre;
+        // Si le prix total est déjà calculé et sauvegardé
+        if ($this->prix_main_oeuvre) {
+            return $this->prix_main_oeuvre;
         }
+        
+        // Sinon, calculer
+        if ($this->nombre_ouvriers && $this->heures_travail_par_ouvrier && $this->prix_heure_main_oeuvre) {
+            return $this->nombre_ouvriers * $this->heures_travail_par_ouvrier * $this->prix_heure_main_oeuvre;
+        }
+        
         return 0;
     }
 
@@ -261,6 +340,50 @@ class Distillation extends Model
     public function getCoutMainOeuvreFormateAttribute(): string
     {
         return number_format($this->cout_main_oeuvre, 2) . ' MGA';
+    }
+
+    /**
+     * Calculer le coût horaire moyen par ouvrier
+     */
+    public function getCoutHoraireMoyenAttribute(): ?float
+    {
+        if ($this->nombre_ouvriers && $this->prix_heure_main_oeuvre) {
+            return $this->prix_heure_main_oeuvre * $this->nombre_ouvriers;
+        }
+        return null;
+    }
+
+    /**
+     * Formater le coût horaire moyen
+     */
+    public function getCoutHoraireMoyenFormateAttribute(): string
+    {
+        if ($this->cout_horaire_moyen !== null) {
+            return number_format($this->cout_horaire_moyen, 2) . ' MGA/heure';
+        }
+        return 'Non calculable';
+    }
+
+    /**
+     * Calculer le coût par heure de travail
+     */
+    public function getCoutParHeureTravailAttribute(): ?float
+    {
+        if ($this->heures_travail_totales > 0 && $this->cout_main_oeuvre > 0) {
+            return $this->cout_main_oeuvre / $this->heures_travail_totales;
+        }
+        return null;
+    }
+
+    /**
+     * Formater le coût par heure de travail
+     */
+    public function getCoutParHeureTravailFormateAttribute(): string
+    {
+        if ($this->cout_par_heure_travail !== null) {
+            return number_format($this->cout_par_heure_travail, 2) . ' MGA/heure';
+        }
+        return 'Non calculable';
     }
 
     /**

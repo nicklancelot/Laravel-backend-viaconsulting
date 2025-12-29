@@ -39,9 +39,11 @@ return new class extends Migration
             $table->decimal('quantite_carburant', 10, 2)->nullable(); // quantité en litres
             $table->decimal('prix_carburant', 10, 2)->nullable(); // prix par litre
 
-            // Main d'œuvre
+            // Main d'œuvre - AJOUT DES NOUVEAUX CHAMPS
             $table->decimal('nombre_ouvriers', 10, 2)->nullable(); // nombre d'ouvriers
-            $table->decimal('prix_main_oeuvre', 10, 2)->nullable(); // prix par ouvrier
+            $table->decimal('heures_travail_par_ouvrier', 5, 2)->nullable(); // heures de travail par ouvrier
+            $table->decimal('prix_heure_main_oeuvre', 10, 2)->nullable(); // prix par heure par ouvrier
+            $table->decimal('prix_main_oeuvre', 10, 2)->nullable(); // prix total main d'œuvre (calculé)
             
             // Données de fin de distillation (à remplir)
             $table->string('reference')->nullable();

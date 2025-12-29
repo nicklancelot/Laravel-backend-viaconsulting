@@ -6,19 +6,17 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+    
     public function up(): void
     {
         Schema::create('exportations', function (Blueprint $table) {
             $table->id();
-            // Contrat
+           
             $table->bigInteger('numero_contrat')->nullable()->unique();
             $table->date('date_contrat')->nullable();
             $table->string('produit')->nullable();
             $table->string('poids')->nullable();
-            // Détails commerciaux supplémentaires
+    
             $table->string('designation')->nullable();
             $table->decimal('prix_unitaire', 15, 2)->nullable();
             $table->decimal('prix_total', 15, 2)->nullable();
