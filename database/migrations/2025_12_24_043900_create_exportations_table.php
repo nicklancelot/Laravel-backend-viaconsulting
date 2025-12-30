@@ -22,7 +22,6 @@ return new class extends Migration
             $table->decimal('prix_total', 15, 2)->nullable();
             $table->decimal('frais_transport', 15, 2)->nullable();
 
-            // Lien vers client (acheteur)
             $table->foreignId('client_id')->nullable()->constrained('clients')->nullOnDelete();
 
             // Documents (stocker chemins)

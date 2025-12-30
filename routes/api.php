@@ -12,6 +12,7 @@ use App\Http\Controllers\Distillation\DistillationController;
 use App\Http\Controllers\Distillation\ExpeditionController;
 use App\Http\Controllers\Distillation\GestionSoldeController;
 use App\Http\Controllers\Distillation\StatistiqueController;
+use App\Http\Controllers\Distillation\StockADistillerController;
 use App\Http\Controllers\Distillation\StockDistillationController;
 use App\Http\Controllers\Distillation\TransportController;
 use App\Http\Controllers\LivreurControlleur;
@@ -329,12 +330,35 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [ExpeditionController::class, 'index']);
         Route::post('/{expeditionId}/receptionner', [ExpeditionController::class, 'marquerReceptionne']);
         });
+
+        Route::prefix('stock-a-distiller')->group(function () {
+        Route::get('/', [StockADistillerController::class, 'index']);
+       
+        Route::get('/{id}', [StockADistillerController::class, 'show']);
+        Route::get('/{id}/historique-distillations', [StockADistillerController::class, 'getHistoriqueDistillations']);
+        Route::put('/{id}/observations', [StockADistillerController::class, 'updateObservations']);
+    });
     //Route distillations 
-        Route::prefix('distillations')->group(function () {
-        Route::get('/', [DistillationController::class, 'index']);
-        Route::post('/{distillationId}/demarrer', [DistillationController::class, 'demarrerDistillation']);
-        Route::post('/{distillationId}/terminer', [DistillationController::class, 'terminerDistillation']);
-        });
+// Routes distillation
+Route::prefix('distillations')->group(function () {
+    // Liste des stocks disponibles et distillations
+    Route::get('/', [DistillationController::class, 'index']);
+    
+    // Démarrer une NOUVELLE distillation
+    Route::post('/demarrer', [DistillationController::class, 'demarrerDistillation']);
+    
+    // Terminer une distillation existante
+    Route::post('/{id}/terminer', [DistillationController::class, 'terminerDistillation']);
+    
+    // Annuler une distillation
+    Route::post('/{id}/annuler', [DistillationController::class, 'annulerDistillation']);
+    
+    // Détails d'une distillation
+    Route::get('/{id}', [DistillationController::class, 'show']);
+    
+    // Stocks disponibles pour distillation
+    Route::get('/stocks-disponibles', [DistillationController::class, 'getStocksDisponibles']);
+});
 //Transport 
 Route::prefix('transports')->group(function () {
     

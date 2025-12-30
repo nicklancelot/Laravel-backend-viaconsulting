@@ -235,7 +235,7 @@ class TransportController extends Controller
                 'ristourne_communale' => $request->ristourne_communale ?? 0,
                 'observations' => $request->observations ?? null,
                 'statut' => 'en_cours',
-                'created_by' => $user->id
+                
             ]);
 
             // Sortir la quantité du stock

@@ -5,64 +5,141 @@ namespace App\Models\Distillation;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Models\Distillation\Expedition;
-use App\Models\Distillation\Transport; 
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class Distillation extends Model
 {
+    protected $table = 'distillations';
+    
     protected $fillable = [
-        'expedition_id',
-        'statut',
+        // Référence au stock à distiller (optionnel maintenant)
+        'stock_a_distiller_id',
+        
+        // Données du stock (copiées)
         'numero_pv',
         'type_matiere_premiere',
         'quantite_recue',
         'taux_humidite',
         'taux_dessiccation',
+        
+        // Informations de la distillation
+        'statut',
         'id_ambalic',
         'date_debut',
-        'poids_distiller',
+        'date_fin',
         'usine',
         'duree_distillation',
-        // Bois de chauffage
+        'poids_distiller', // ← Utiliser cette colonne au lieu de quantite_utilisee
+        
+        // Coûts
         'quantite_bois_chauffage',
         'prix_bois_chauffage',
-        // Carburant
         'quantite_carburant',
         'prix_carburant',
-        // Main d'œuvre
         'nombre_ouvriers',
         'heures_travail_par_ouvrier',
         'prix_heure_main_oeuvre',
         'prix_main_oeuvre',
-        // Données de fin
+        
+        // Résultats
         'reference',
         'matiere',
         'site',
         'quantite_traitee',
-        'date_fin',
         'type_he',
         'quantite_resultat',
-        'observations'
+        'observations',
+        
+        // Qui a créé
+        'created_by'
     ];
-
+    
     protected $dates = [
         'date_debut',
         'date_fin',
         'created_at',
         'updated_at'
     ];
-
+    
     /**
-     * Boot method pour calculer automatiquement le prix total de la main d'œuvre
+     * Créer une nouvelle distillation
+     */
+    public static function creerNouvelle(array $donnees, StockADistiller $stock): self
+    {
+        DB::beginTransaction();
+        
+        try {
+            // Réserver la quantité dans le stock
+            if (!$stock->reserverPourDistillation($donnees['poids_distiller'])) {
+                throw new \Exception('Quantité insuffisante dans le stock');
+            }
+            
+            // Créer la distillation
+            $distillation = self::create([
+                'type_matiere_premiere' => $stock->type_matiere,
+                'poids_distiller' => $donnees['poids_distiller'], // ← Utiliser poids_distiller
+                'statut' => 'en_cours',
+                'id_ambalic' => $donnees['id_ambalic'],
+                'date_debut' => $donnees['date_debut'],
+                'usine' => $donnees['usine'],
+                'duree_distillation' => $donnees['duree_distillation'],
+                'quantite_bois_chauffage' => $donnees['quantite_bois_chauffage'],
+                'prix_bois_chauffage' => $donnees['prix_bois_chauffage'],
+                'quantite_carburant' => $donnees['quantite_carburant'],
+                'prix_carburant' => $donnees['prix_carburant'],
+                'nombre_ouvriers' => $donnees['nombre_ouvriers'],
+                'heures_travail_par_ouvrier' => $donnees['heures_travail_par_ouvrier'],
+                'prix_heure_main_oeuvre' => $donnees['prix_heure_main_oeuvre'],
+                'created_by' => $donnees['created_by'],
+                'observations' => 'Démarrée avec ' . $donnees['poids_distiller'] . ' kg de ' . $stock->type_matiere
+            ]);
+            
+            DB::commit();
+            return $distillation;
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+    
+    /**
+     * Boot method
      */
     protected static function boot()
     {
         parent::boot();
 
+        // Calcul automatique du prix total de la main d'œuvre
         static::saving(function ($distillation) {
             $distillation->calculerPrixMainOeuvre();
         });
+
+        // Créer un stock de produit fini quand la distillation est terminée
+        static::updated(function ($distillation) {
+            if ($distillation->isDirty('statut') && $distillation->estTerminee()) {
+                $distillation->creerStockProduitFini();
+            }
+        });
+    }
+
+    /**
+     * Synchroniser les données depuis le StockADistiller
+     */
+    public function syncFromStockADistiller(): void
+    {
+        if ($this->stockADistiller && $this->estEnAttente()) {
+            $this->update([
+                'numero_pv' => $this->stockADistiller->numero_pv_reference,
+                'type_matiere_premiere' => $this->stockADistiller->type_matiere,
+                'quantite_recue' => $this->stockADistiller->quantite_restante,
+                'taux_humidite' => $this->stockADistiller->taux_humidite_moyen,
+                'taux_dessiccation' => $this->stockADistiller->taux_dessiccation_moyen,
+                'observations' => 'Distillation créée depuis stock agrégé: ' . $this->stockADistiller->type_matiere
+            ]);
+        }
     }
 
     /**
@@ -76,15 +153,47 @@ class Distillation extends Model
     }
 
     /**
-     * Relation avec l'expédition
+     * Créer un stock de produit fini
      */
-    public function expedition(): BelongsTo
+    public function creerStockProduitFini(): void
     {
-        return $this->belongsTo(Expedition::class);
+        try {
+            // Vérifier qu'un stock n'existe pas déjà
+            if ($this->stock) {
+                return;
+            }
+
+            // Vérifier que la distillation a une quantité de résultat
+            if (!$this->quantite_resultat || $this->quantite_resultat <= 0) {
+                return;
+            }
+
+            // Créer le stock
+            Stock::creerDepuisDistillation($this);
+
+        } catch (\Exception $e) {
+            \Log::error('Erreur création stock produit fini: ' . $e->getMessage());
+        }
     }
 
     /**
-     * Relation avec le transport
+     * Relation avec le stock à distiller
+     */
+    public function stockADistiller(): BelongsTo
+    {
+        return $this->belongsTo(StockADistiller::class, 'stock_a_distiller_id');
+    }
+
+    /**
+     * Relation avec le stock de produit fini
+     */
+    public function stock(): HasOne
+    {
+        return $this->hasOne(Stock::class);
+    }
+
+    /**
+     * Relation avec les transports
      */
     public function transports(): HasMany
     {
@@ -92,17 +201,17 @@ class Distillation extends Model
     }
 
     /**
-     * Relation avec le stock
+     * Relation avec l'utilisateur créateur
      */
-    public function stock()
+    public function createdBy(): BelongsTo
     {
-        return $this->hasOne(Stock::class);
+        return $this->belongsTo(\App\Models\Utilisateur::class, 'created_by');
     }
 
     /**
      * Démarrer la distillation
      */
-    public function demarrer(array $donneesDemarrage)
+    public function demarrer(array $donneesDemarrage): self
     {
         $this->update(array_merge($donneesDemarrage, [
             'statut' => 'en_cours'
@@ -114,27 +223,35 @@ class Distillation extends Model
     /**
      * Terminer la distillation
      */
-    public function terminer(array $donneesFin)
+    public function terminer(array $donnees): bool
     {
-        \Illuminate\Support\Facades\DB::beginTransaction();
+        DB::beginTransaction();
         
         try {
-            $this->update(array_merge($donneesFin, [
-                'statut' => 'termine'
-            ]));
-
-            // Créer automatiquement l'entrée en stock
-            Stock::creerDepuisDistillation($this);
+            $this->update([
+                'statut' => 'termine',
+                'date_fin' => $donnees['date_fin'],
+                'quantite_traitee' => $donnees['quantite_traitee'],
+                'type_he' => $donnees['type_he'],
+                'quantite_resultat' => $donnees['quantite_resultat'],
+                'reference' => $donnees['reference'] ?? null,
+                'matiere' => $donnees['matiere'] ?? null,
+                'site' => $donnees['site'] ?? null,
+                'observations' => $donnees['observations'] ?? $this->observations
+            ]);
             
-            \Illuminate\Support\Facades\DB::commit();
+            // Créer le stock produit fini
+            $this->creerStockProduitFini();
             
-            return $this;
+            DB::commit();
+            return true;
             
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\DB::rollBack();
+            DB::rollBack();
             throw $e;
         }
     }
+    
 
     /**
      * Vérifier si la distillation est en attente
@@ -161,11 +278,11 @@ class Distillation extends Model
     }
 
     /**
-     * Vérifier si le stock a été créé
+     * Accessor pour obtenir la quantité utilisée (alias de poids_distiller)
      */
-    public function aStock(): bool
+    public function getQuantiteUtiliseeAttribute(): float
     {
-        return $this->stock !== null;
+        return (float) $this->poids_distiller;
     }
 
     /**
@@ -245,20 +362,6 @@ class Distillation extends Model
         return 'Non calculable';
     }
 
-    public function getQuantiteDejaTransporteeAttribute(): float
-    {
-        return $this->transports()->where('statut', 'en_cours')->sum('quantite_a_livrer');
-    }
-
-    public function getQuantiteRestanteAttribute(): float
-    {
-        if (!$this->quantite_resultat) {
-            return 0;
-        }
-        
-        return max(0, $this->quantite_resultat - $this->quantite_deja_transportee);
-    }
-
     /**
      * Calculer le nombre total d'heures de travail
      */
@@ -317,7 +420,7 @@ class Distillation extends Model
     }
 
     /**
-     * Calculer le coût total de la main d'œuvre (attribut calculé)
+     * Calculer le coût total de la main d'œuvre
      */
     public function getCoutMainOeuvreAttribute(): float
     {
@@ -422,5 +525,67 @@ class Distillation extends Model
             return number_format($this->cout_par_produit, 2) . ' MGA/L';
         }
         return 'Non calculable';
+    }
+
+    /**
+     * Calculer la quantité déjà transportée
+     */
+    public function getQuantiteDejaTransporteeAttribute(): float
+    {
+        return $this->transports()->where('statut', 'en_cours')->sum('quantite_a_livrer');
+    }
+
+    /**
+     * Calculer la quantité restante dans le stock de produit fini
+     */
+    public function getQuantiteRestanteAttribute(): float
+    {
+        if ($this->stock) {
+            return $this->stock->quantite_disponible;
+        }
+        return 0;
+    }
+
+    /**
+     * Obtenir le pourcentage d'utilisation du stock à distiller
+     */
+    public function getPourcentageUtiliseStockAttribute(): ?float
+    {
+        if ($this->poids_distiller > 0) {
+            if ($this->stockADistiller) {
+                $quantiteInitiale = $this->stockADistiller->getOriginal('quantite_recue');
+                if ($quantiteInitiale > 0) {
+                    return ($this->poids_distiller / $quantiteInitiale) * 100;
+                }
+            } elseif ($this->quantite_recue > 0) {
+                return ($this->poids_distiller / $this->quantite_recue) * 100;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Scope pour les distillations en attente de démarrage
+     */
+    public function scopeEnAttente($query)
+    {
+        return $query->where('statut', 'en_attente');
+    }
+
+    /**
+     * Créer une distillation automatique pour un stock
+     */
+    public static function creerPourStock(StockADistiller $stock): self
+    {
+        return self::create([
+            'type_matiere_premiere' => $stock->type_matiere,
+            'numero_pv' => $stock->numero_pv_reference,
+            'quantite_recue' => $stock->quantite_restante,
+            'taux_humidite' => $stock->taux_humidite_moyen,
+            'taux_dessiccation' => $stock->taux_dessiccation_moyen,
+            'statut' => 'en_attente',
+            'observations' => 'Distillation créée pour stock agrégé: ' . $stock->type_matiere,
+            'created_by' => $stock->distilleur_id
+        ]);
     }
 }

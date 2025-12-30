@@ -16,7 +16,7 @@ return new class extends Migration
             $table->date('date_reception')->nullable();
             $table->decimal('quantite_expediee', 10, 2); 
             $table->decimal('quantite_recue', 10, 2)->nullable(); 
-            $table->string('type_matiere'); // FG, CG, GG
+            $table->string('type_matiere'); 
              $table->string('lieu_depart')->nullable(); 
             $table->text('observations')->nullable();
             $table->timestamps();
