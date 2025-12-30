@@ -63,7 +63,9 @@ class DemandeSoldeController extends Controller
                 'montant_demande' => $request->montant_demande,
                 'raison' => $request->raison,
                 'statut' => 'en_attente',
-                'date' => now()
+                'date' => now(),
+                'lu_par_utilisateur' => false,
+                'lu_par_admin' => false
             ]);
 
             
@@ -207,7 +209,9 @@ class DemandeSoldeController extends Controller
         $demande->update([
             'statut' => $request->statut,
             'admin_id' => $request->admin_id,
-            'commentaire_admin' => $request->commentaire_admin
+            'commentaire_admin' => $request->commentaire_admin,
+            'lu_par_utilisateur' => false, // Réinitialiser l'état lu de l'utilisateur quand le statut change
+            'lu_par_admin' => true // L'admin a vu la demande en la traitant
         ]);
 
         // Recharger les relations
@@ -249,6 +253,7 @@ class DemandeSoldeController extends Controller
         ], 500);
     }
 }
+
     public function mesDemandes($utilisateur_id)
     {
         try {
@@ -369,6 +374,160 @@ class DemandeSoldeController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la récupération des statistiques',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // NOUVELLES MÉTHODES POUR GÉRER LES ÉTATS LU/NON LU
+
+    public function marquerCommeLuParUtilisateur($id)
+    {
+        try {
+            $demande = DemandeSolde::findOrFail($id);
+            $demande->update(['lu_par_utilisateur' => true]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Demande marquée comme lue par l\'utilisateur'
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Demande de solde non trouvée'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Erreur marquer comme lu par utilisateur: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du marquage comme lu',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function marquerCommeLuParAdmin($id)
+    {
+        try {
+            $demande = DemandeSolde::findOrFail($id);
+            $demande->update(['lu_par_admin' => true]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Demande marquée comme lue par l\'admin'
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Demande de solde non trouvée'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Erreur marquer comme lu par admin: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du marquage comme lu',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function reinitialiserLu($id)
+    {
+        try {
+            $demande = DemandeSolde::findOrFail($id);
+            $demande->update([
+                'lu_par_utilisateur' => false,
+                'lu_par_admin' => false
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'État lu réinitialisé'
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Demande de solde non trouvée'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Erreur réinitialisation état lu: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la réinitialisation',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getNonLues($userId, $role)
+    {
+        try {
+            $query = DemandeSolde::query();
+            
+            if ($role === 'admin') {
+                // Pour l'admin: compter les demandes non lues par l'admin
+                $count = $query->where('lu_par_admin', false)->count();
+            } else {
+                // Pour l'utilisateur: compter ses propres demandes non lues
+                $count = $query->where('utilisateur_id', $userId)
+                              ->where('lu_par_utilisateur', false)
+                              ->count();
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'non_lues' => $count
+                ],
+                'message' => 'Nombre de demandes non lues récupéré'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erreur récupération demandes non lues: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération des demandes non lues',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function marquerToutesLuesParUtilisateur($utilisateur_id)
+    {
+        try {
+            $updated = DemandeSolde::where('utilisateur_id', $utilisateur_id)
+                                  ->update(['lu_par_utilisateur' => true]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Toutes les demandes marquées comme lues par l'utilisateur",
+                'count' => $updated
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erreur marquer toutes comme lues par utilisateur: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du marquage des demandes comme lues',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function marquerToutesLuesParAdmin()
+    {
+        try {
+            $updated = DemandeSolde::where('lu_par_admin', false)
+                                  ->update(['lu_par_admin' => true]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Toutes les demandes marquées comme lues par l'admin",
+                'count' => $updated
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erreur marquer toutes comme lues par admin: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du marquage des demandes comme lues',
                 'error' => $e->getMessage()
             ], 500);
         }

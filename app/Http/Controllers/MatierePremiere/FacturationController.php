@@ -4,10 +4,10 @@ namespace App\Http\Controllers\MatierePremiere;
 
 use App\Http\Controllers\Controller;
 use App\Models\MatierePremiere\Facturation;
-use App\Models\MatierePremiere\Impaye;
 use App\Models\MatierePremiere\PVReception;
 use App\Models\SoldeUser;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class FacturationController extends Controller
 {
@@ -15,10 +15,12 @@ class FacturationController extends Controller
     {
         try {
             $facturations = Facturation::with(['pvReception.fournisseur', 'pvReception.provenance'])->get();
+            
             return response()->json([
                 'status' => 'success',
                 'data' => $facturations
             ], 200);
+            
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -56,7 +58,6 @@ class FacturationController extends Controller
                 ], 404);
             }
 
-            // Vérifier si une facturation existe déjà pour ce PV
             $facturationExistante = Facturation::where('pv_reception_id', $request->pv_reception_id)->first();
             if ($facturationExistante) {
                 return response()->json([
@@ -65,7 +66,6 @@ class FacturationController extends Controller
                 ], 422);
             }
 
-            // VÉRIFICATION SOLDE UTILISATEUR
             $soldeUser = SoldeUser::where('utilisateur_id', $pvReception->utilisateur_id)->first();
             $soldeActuel = $soldeUser ? $soldeUser->solde : 0;
 
@@ -79,7 +79,6 @@ class FacturationController extends Controller
                 ], 400);
             }
 
-            // DÉCRÉMENTER LE SOLDE UTILISATEUR
             if ($soldeUser && $request->montant_paye > 0) {
                 $soldeUser->decrement('solde', $request->montant_paye);
                 $nouveauSolde = $soldeUser->solde;
@@ -87,31 +86,29 @@ class FacturationController extends Controller
                 $nouveauSolde = $soldeActuel;
             }
 
-            // Générer le numéro de facture automatiquement
             $request->merge([
                 'numero_facture' => Facturation::genererNumeroFacture()
             ]);
 
             $facturation = Facturation::create($request->all());
             
-            // Mettre à jour la dette du fournisseur
             $nouvelleDette = $pvReception->dette_fournisseur - $request->montant_paye;
-            
-            // DÉTERMINER LE NOUVEAU STATUT
             $nouveauStatut = $pvReception->statut;
+            
             if ($nouvelleDette <= 0) {
-                // Si la dette est complètement payée
                 $nouveauStatut = 'paye';
             } else {
-                // Si il reste de la dette
                 $nouveauStatut = 'incomplet';
             }
 
-            // Mettre à jour le PV de réception
             $pvReception->update([
                 'dette_fournisseur' => max(0, $nouvelleDette),
                 'statut' => $nouveauStatut
             ]);
+
+            if ($nouveauStatut === 'paye') {
+                $this->mettreEnStockAutomatique($pvReception);
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -121,7 +118,8 @@ class FacturationController extends Controller
                     'solde_avant' => $soldeActuel,
                     'solde_apres' => $nouveauSolde,
                     'montant_debite' => $request->montant_paye
-                ]
+                ],
+                'stock_ajoute' => $nouveauStatut === 'paye'
             ], 201);
 
         } catch (\Exception $e) {
@@ -228,7 +226,6 @@ class FacturationController extends Controller
                 ], 422);
             }
 
-            // Mettre à jour le paiement
             $facturation->update([
                 'montant_paye' => $facturation->montant_paye + $request->montant_paye,
                 'mode_paiement' => $request->mode_paiement,
@@ -247,6 +244,55 @@ class FacturationController extends Controller
                 'status' => 'error',
                 'message' => 'Erreur lors de l\'enregistrement du paiement'
             ], 500);
+        }
+    }
+
+     private function mettreEnStockAutomatique(PVReception $pvReception): void
+    {
+        if ($pvReception->statut === 'paye') {
+            // 1. Stock global
+            DB::table('stockpvs')
+                ->where('type_matiere', $pvReception->type)
+                ->whereNull('utilisateur_id')
+                ->where('niveau_stock', 'global')
+                ->update([
+                    'stock_total' => DB::raw("stock_total + {$pvReception->poids_net}"),
+                    'stock_disponible' => DB::raw("stock_disponible + {$pvReception->poids_net}"),
+                    'updated_at' => now(),
+                ]);
+                
+            // 2. Stock de l'utilisateur (collecteur)
+            $stockUtilisateur = DB::table('stockpvs')
+                ->where('type_matiere', $pvReception->type)
+                ->where('utilisateur_id', $pvReception->utilisateur_id)
+                ->where('niveau_stock', 'utilisateur')
+                ->first();
+                
+            if ($stockUtilisateur) {
+                // Mettre à jour le stock existant
+                DB::table('stockpvs')
+                    ->where('id', $stockUtilisateur->id)
+                    ->update([
+                        'stock_total' => DB::raw("stock_total + {$pvReception->poids_net}"),
+                        'stock_disponible' => DB::raw("stock_disponible + {$pvReception->poids_net}"),
+                        'updated_at' => now(),
+                    ]);
+            } else {
+                // Créer un nouveau stock pour l'utilisateur
+                DB::table('stockpvs')->insert([
+                    'type_matiere' => $pvReception->type,
+                    'stock_total' => $pvReception->poids_net,
+                    'stock_disponible' => $pvReception->poids_net,
+                    'utilisateur_id' => $pvReception->utilisateur_id,
+                    'niveau_stock' => 'utilisateur',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+            
+            \Log::info("Stock ajouté pour PV {$pvReception->id}: " . 
+                "Global +{$pvReception->poids_net}kg, " .
+                "Utilisateur {$pvReception->utilisateur_id} +{$pvReception->poids_net}kg");
         }
     }
 }

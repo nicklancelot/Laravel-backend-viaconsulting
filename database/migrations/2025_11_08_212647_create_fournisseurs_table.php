@@ -13,6 +13,7 @@ return new class extends Migration
             $table->string('nom', 100)->nullable();
             $table->string('prenom', 100)->nullable();
             $table->text('adresse')->nullable();
+            $table->string('cin', length: 20)->nullable();
             $table->string('identification_fiscale', 50)->nullable()->unique();
             $table->foreignId('localisation_id')->nullable()->constrained()->onDelete('cascade');
             $table->foreignId('utilisateur_id')->nullable()->constrained('utilisateurs')->onDelete('cascade')->after('id');

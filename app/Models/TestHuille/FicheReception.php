@@ -30,14 +30,17 @@ class FicheReception extends Model
         'poids_emballage',
         'nombre_colisage',
         'prix_unitaire',
-        'prix_total'
+        'prix_total',
+            'quantite_totale',
+        'quantite_restante'
+      
     ];
 
     // Relations
-    public function ficheLivraison()
-    {
-        return $this->hasOne(HEFicheLivraison::class);
-    }
+public function ficheLivraison()
+{
+    return $this->hasOne(HEFicheLivraison::class)->latest();
+}
     
     public function fournisseur()
     {

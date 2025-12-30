@@ -93,4 +93,40 @@ class LivreurControlleur extends Controller
         
         return response()->json($livreurs);
     }
+
+        /**
+     * Retourne des statistiques globales sur les livreurs
+     */
+    public function stats(): JsonResponse
+    {
+        $totalLivreurs = Livreur::count();
+
+        $livreursParZone = Livreur::select('zone_livraison')
+            ->selectRaw('count(*) as nombre')
+            ->groupBy('zone_livraison')
+            ->orderByDesc('nombre')
+            ->get();
+
+        $livreursParCreateur = Livreur::with('createur:id,nom,prenom')
+            ->select('created_by')
+            ->selectRaw('count(*) as nombre')
+            ->groupBy('created_by')
+            ->orderByDesc('nombre')
+            ->get();
+
+        // Optionnel : livreurs ajoutés par mois (sur les 12 derniers mois)
+        $livreursParMois = Livreur::selectRaw('DATE_FORMAT(created_at, "%Y-%m") as mois')
+            ->selectRaw('count(*) as nombre')
+            ->where('created_at', '>=', now()->subYear())
+            ->groupBy('mois')
+            ->orderBy('mois')
+            ->pluck('nombre', 'mois');
+
+        return response()->json([
+            'total_livreurs' => $totalLivreurs,
+            'livreurs_par_zone' => $livreursParZone,
+            'livreurs_par_createur' => $livreursParCreateur,
+            'livreurs_par_mois_dernier_an' => $livreursParMois,
+        ]);
+    }
 }

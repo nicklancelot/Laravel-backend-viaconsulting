@@ -48,14 +48,24 @@ class TransfertController extends Controller
             'reference' => 'nullable|string|max:50',
             'raison' => 'nullable|string|max:500'
         ]);
-
-        // Vérifier que l'admin a le rôle admin
-        $admin = Utilisateur::find($request->admin_id);
-        if (!$admin || $admin->role !== 'admin') {
+        // Vérifier que l'initiateur a le rôle admin ou vendeur
+        $initiateur = Utilisateur::find($request->admin_id);
+        if (!$initiateur || !in_array($initiateur->role, ['admin', 'vendeur'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Seuls les administrateurs peuvent effectuer des transferts'
+                'message' => 'Seuls les administrateurs ou les vendeurs peuvent effectuer des transferts'
             ], 403);
+        }
+
+        // Si l'initiateur est un vendeur, s'assurer que le destinataire est un administrateur
+        if ($initiateur->role === 'vendeur') {
+            $destinataireUser = Utilisateur::find($request->destinataire_id);
+            if (!$destinataireUser || $destinataireUser->role !== 'admin') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Les vendeurs ne peuvent transférer qu\'aux administrateurs'
+                ], 403);
+            }
         }
 
         // Vérifier que le destinataire n'est pas le même que l'admin
@@ -66,34 +76,75 @@ class TransfertController extends Controller
             ], 400);
         }
 
-        // Vérifier le solde disponible (dernier solde dans la table caissiers)
-        $derniereTransaction = Caissier::latest()->first();
-        $soldeActuel = $derniereTransaction ? $derniereTransaction->solde : 0;
+        // Préparer la variable de retour du solde pour éviter les variables non définies
+        $nouveauSolde = null;
 
-        if ($soldeActuel < $request->montant) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Solde insuffisant pour effectuer ce transfert. Solde disponible: ' . number_format($soldeActuel, 0, ',', ' ') . ' Ar'
-            ], 400);
+        // Si l'initiateur est un vendeur, vérifier et décrémenter son solde utilisateur
+        if ($initiateur->role === 'vendeur') {
+            $soldeInitiateur = SoldeUser::where('utilisateur_id', $initiateur->id)->first();
+
+            if (!$soldeInitiateur || $soldeInitiateur->solde < $request->montant) {
+                $dispo = $soldeInitiateur ? number_format($soldeInitiateur->solde, 0, ',', ' ') . ' Ar' : '0 Ar';
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Solde insuffisant du vendeur pour effectuer ce transfert. Solde disponible: ' . $dispo
+                ], 400);
+            }
+
+            // Créer le transfert
+            $transfert = Transfert::create($request->all());
+
+            // Décrémenter le solde du vendeur
+            $soldeInitiateur->decrement('solde', $request->montant);
+
+            // Mettre à jour la caisse globale : créer une entrée de type 'recette'
+            $derniereTransactionCaisse = Caissier::latest()->first();
+            $soldeCaisseActuel = $derniereTransactionCaisse ? $derniereTransactionCaisse->solde : 0;
+            $nouveauSoldeCaisse = $soldeCaisseActuel + $request->montant;
+
+            Caissier::create([
+                'utilisateur_id' => $request->destinataire_id, 
+                'solde' => $nouveauSoldeCaisse,
+                'date' => now(),
+                'montant' => $request->montant,
+                'type' => 'recette',
+                'methode' => $request->type_transfert,
+                'raison' => $this->genererRaisonTransfert($transfert),
+                'reference' => $request->reference
+            ]);
+
+            // Pour la réponse on renvoie maintenant le solde global mis à jour
+            $nouveauSolde = $nouveauSoldeCaisse;
+        } else {
+            // Vérifier le solde disponible (dernier solde dans la table caissiers) pour les admins
+            $derniereTransaction = Caissier::latest()->first();
+            $soldeActuel = $derniereTransaction ? $derniereTransaction->solde : 0;
+
+            if ($soldeActuel < $request->montant) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Solde insuffisant pour effectuer ce transfert. Solde disponible: ' . number_format($soldeActuel, 0, ',', ' ') . ' Ar'
+                ], 400);
+            }
+
+            // Créer le transfert
+            $transfert = Transfert::create($request->all());
+
+            // Calculer le nouveau solde après transfert
+            $nouveauSolde = $soldeActuel - $request->montant;
+
+            // Créer une transaction de dépense dans la caisse
+            Caissier::create([
+                'utilisateur_id' => $request->admin_id,
+                'solde' => $nouveauSolde,
+                'date' => now(),
+                'montant' => $request->montant,
+                'type' => 'depense',
+                'methode' => $request->type_transfert,
+                'raison' => $this->genererRaisonTransfert($transfert),
+                'reference' => $request->reference
+            ]);
         }
-
-        // Créer le transfert
-        $transfert = Transfert::create($request->all());
-
-        // Calculer le nouveau solde après transfert
-        $nouveauSolde = $soldeActuel - $request->montant;
-
-        // Créer une transaction de dépense dans la caisse
-        Caissier::create([
-            'utilisateur_id' => $request->admin_id,
-            'solde' => $nouveauSolde,
-            'date' => now(),
-            'montant' => $request->montant,
-            'type' => 'depense',
-            'methode' => $request->type_transfert,
-            'raison' => $this->genererRaisonTransfert($transfert),
-            'reference' => $request->reference
-        ]);
 
         // METTRE À JOUR SOLDEUSER - NOUVEAU CODE
         $soldeUser = SoldeUser::where('utilisateur_id', $request->destinataire_id)->first();

@@ -8,21 +8,27 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('h_e_fiche_livraisons', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('fiche_reception_id')->constrained('fiche_receptions')->onDelete('cascade');
-            $table->foreignId('livreur_id')->nullable()->constrained('livreurs')->onDelete('set null');
-            $table->foreignId('destinateur_id')->nullable()->constrained('destinateurs')->onDelete('set null');
-            $table->dateTime('date_heure_livraison');
-            $table->string('fonction_destinataire', 100);
-            $table->string('lieu_depart', 100);
-            $table->string('destination', 100);
-            $table->string('type_produit', 100);
-            $table->decimal('poids_net', 10, 2);
-            $table->decimal('ristourne_regionale', 10, 2)->default(0);
-            $table->decimal('ristourne_communale', 10, 2)->default(0);
-            $table->timestamps();
-        });
+Schema::create('h_e_fiche_livraisons', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('stockhe_id')->constrained('stockhes')->onDelete('cascade'); 
+    $table->foreignId('livreur_id')->nullable()->constrained('livreurs')->onDelete('set null');
+    $table->foreignId('vendeur_id')->constrained('utilisateurs')->onDelete('cascade');
+    $table->dateTime('date_heure_livraison');
+    $table->string('fonction_destinataire', 100);
+    $table->string('lieu_depart', 100);
+    $table->string('destination', 100);
+    $table->string('type_produit', 100);
+    $table->decimal('poids_net', 10, 2);
+    $table->decimal('ristourne_regionale', 10, 2)->default(0);
+    $table->decimal('ristourne_communale', 10, 2)->default(0);
+    $table->decimal('quantite_a_livrer', 10, 2);
+    $table->enum('statut', ['livree', 'annulee'])->default('livree');
+    $table->timestamp('date_statut')->nullable();
+    $table->timestamps();
+    
+    // Index pour optimiser les requêtes
+    $table->index(['stockhe_id', 'created_at']);
+});
     }
 
     public function down(): void

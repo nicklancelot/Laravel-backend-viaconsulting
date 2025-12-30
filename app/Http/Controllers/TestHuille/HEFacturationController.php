@@ -5,6 +5,7 @@ namespace App\Http\Controllers\TestHuille;
 use App\Http\Controllers\Controller;
 use App\Models\TestHuille\HEFacturation;
 use App\Models\TestHuille\FicheReception;
+use App\Models\TestHuille\Stockhe;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -45,14 +46,12 @@ class HEFacturationController extends Controller
 
             $validated = $request->validate([
                 'fiche_reception_id' => 'required|exists:fiche_receptions,id',
-                // Supprimé: 'prix_unitaire' => 'required|numeric|min:0',
                 'montant_total' => 'required|numeric|min:0',
                 'avance_versee' => 'required|numeric|min:0',
                 'controller_qualite' => 'required|string|max:100',
                 'responsable_commercial' => 'required|string|max:100'
             ]);
 
-            // Vérifier si la fiche existe et a un statut acceptable pour la facturation
             $fiche = FicheReception::find($validated['fiche_reception_id']);
             if (!$fiche) {
                 return response()->json([
@@ -61,7 +60,6 @@ class HEFacturationController extends Controller
                 ], 404);
             }
 
-            // Vérifier si la fiche est acceptée
             if ($fiche->statut !== 'Accepté') {
                 return response()->json([
                     'success' => false,
@@ -69,7 +67,6 @@ class HEFacturationController extends Controller
                 ], 400);
             }
 
-            // Vérifier si une facturation existe déjà pour cette fiche
             $existingFacturation = HEFacturation::where('fiche_reception_id', $validated['fiche_reception_id'])->first();
             if ($existingFacturation) {
                 return response()->json([
@@ -85,10 +82,9 @@ class HEFacturationController extends Controller
             if ($soldeActuel < $validated['avance_versee']) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Solde utilisateur insuffisant. Solde disponible: ' . number_format($soldeActuel, 0, ',', ' ') . ' Ar - Avance à verser: ' . number_format($validated['avance_versee'], 0, ',', ' ') . ' Ar',
+                    'message' => 'Solde utilisateur insuffisant',
                     'solde_actuel' => $soldeActuel,
-                    'avance_requise' => $validated['avance_versee'],
-                    'solde_insuffisant' => true
+                    'avance_requise' => $validated['avance_versee']
                 ], 400);
             }
 
@@ -109,12 +105,11 @@ class HEFacturationController extends Controller
                 ], 400);
             }
 
-            // Déterminer le statut de paiement selon les statuts existants
+            // Déterminer le statut de paiement
             $statutPaiement = $this->determinerStatutPaiement($validated['avance_versee'], $resteAPayer);
 
             $facturation = HEFacturation::create([
                 'fiche_reception_id' => $validated['fiche_reception_id'],
-                // Supprimé: 'prix_unitaire' => $validated['prix_unitaire'],
                 'montant_total' => $validated['montant_total'],
                 'avance_versee' => $validated['avance_versee'],
                 'reste_a_payer' => $resteAPayer,
@@ -125,6 +120,11 @@ class HEFacturationController extends Controller
             // Mettre à jour le statut de la fiche de réception
             $fiche->update(['statut' => $statutPaiement]);
 
+            // ✅ AJOUTER AU STOCK SI LE STATUT EST "payé"
+        if ($statutPaiement === 'payé') {
+    Stockhe::ajouterStock($fiche->quantite_totale, $fiche->utilisateur_id);
+}
+
             DB::commit();
 
             $facturation->load(['ficheReception.fournisseur', 'ficheReception.siteCollecte']);
@@ -134,6 +134,7 @@ class HEFacturationController extends Controller
                 'message' => 'Facturation créée avec succès',
                 'data' => $facturation,
                 'nouveau_statut' => $statutPaiement,
+                'stock_ajoute' => $statutPaiement === 'payé',
                 'solde_info' => [
                     'solde_avant' => $soldeActuel,
                     'solde_apres' => $nouveauSolde,
@@ -141,13 +142,6 @@ class HEFacturationController extends Controller
                 ]
             ], 201);
 
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur de validation',
-                'errors' => $e->errors()
-            ], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([

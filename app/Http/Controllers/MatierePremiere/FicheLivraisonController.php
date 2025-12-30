@@ -4,411 +4,439 @@ namespace App\Http\Controllers\MatierePremiere;
 
 use App\Http\Controllers\Controller;
 use App\Models\MatierePremiere\FicheLivraison;
-use App\Models\MatierePremiere\PVReception;
+use App\Models\MatierePremiere\Stockpv;
+use App\Models\Utilisateur;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use App\Models\Livreur;
-use App\Models\Destinateur;
 
 class FicheLivraisonController extends Controller
 {
-    public function store(Request $request)
-{
-    try {
-        $validator = Validator::make($request->all(), [
-            'pv_reception_id' => 'required|exists:p_v_receptions,id',
-            'livreur_id' => 'required|exists:livreurs,id',
-            'destinateur_id' => 'required|exists:destinateurs,id',
-            'date_livraison' => 'required|date',
-            'lieu_depart' => 'required|string|max:255',
-            'ristourne_regionale' => 'nullable|numeric|min:0',
-            'ristourne_communale' => 'nullable|numeric|min:0',
-            'quantite_a_livrer' => 'required|numeric|min:0.01',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Erreur de validation',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $pvReception = PVReception::find($request->pv_reception_id);
-        
-        $statutsAutorises = ['paye', 'partiellement_livre'];
-        if (!$pvReception) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'PV de réception non trouvé'
-            ], 404);
-        }
-
-        if (!in_array($pvReception->statut, $statutsAutorises)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'PV non autorisé pour livraison. Statut actuel: ' . $pvReception->statut
-            ], 422);
-        }
-
-        // VÉRIFIER LE STOCK RESTANT
-        if ($request->quantite_a_livrer > $pvReception->quantite_restante) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Quantité à livrer supérieure au stock disponible. Stock restant: ' . $pvReception->quantite_restante . ' kg'
-            ], 422);
-        }
-
-        // Vérifier s'il existe déjà une fiche en attente pour ce PV
-        $ficheEnAttente = FicheLivraison::where('pv_reception_id', $request->pv_reception_id)
-            ->whereDoesntHave('livraison')
-            ->first();
-
-        if ($ficheEnAttente) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Une fiche de livraison est déjà en attente pour ce PV. Veuillez confirmer la livraison en cours avant d\'en créer une nouvelle.'
-            ], 422);
-        }
-
-        // Déterminer si c'est une livraison partielle
-        $estPartielle = $request->quantite_a_livrer < $pvReception->quantite_restante;
-
-        // Créer la fiche avec les références aux modèles
-        $ficheLivraison = FicheLivraison::create([
-            'pv_reception_id' => $request->pv_reception_id,
-            'livreur_id' => $request->livreur_id,
-            'destinateur_id' => $request->destinateur_id,
-            'date_livraison' => $request->date_livraison,
-            'lieu_depart' => $request->lieu_depart,
-            'ristourne_regionale' => $request->ristourne_regionale ?? 0,
-            'ristourne_communale' => $request->ristourne_communale ?? 0,
-            'quantite_a_livrer' => $request->quantite_a_livrer,
-            'quantite_restante' => $request->quantite_a_livrer,
-            'est_partielle' => $estPartielle,
-        ]);
-
-        // Mettre à jour statut PV
-        if ($pvReception->statut === 'paye') {
-            $pvReception->update(['statut' => 'en_attente_livraison']);
-        } elseif ($pvReception->statut === 'partiellement_livre') {
-            $pvReception->update(['statut' => 'en_attente_livraison']);
-        }
-
-        // Charger les relations pour la réponse
-        $ficheLivraison->load([
-            'pvReception.fournisseur', 
-            'pvReception.provenance',
-            'livreur',
-            'destinateur'
-        ]);
-
-        $message = 'Fiche de livraison créée avec succès';
-        if ($estPartielle) {
-            $message .= ' (livraison partielle)';
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'message' => $message,
-            'data' => $ficheLivraison
-        ], 201);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Erreur lors de la création de la fiche de livraison: ' . $e->getMessage()
-        ], 500);
-    }
-}
-
-
-    public function livrer($id)
+    public function index(): JsonResponse
     {
         try {
-            $ficheLivraison = FicheLivraison::with(['pvReception'])->find($id);
+            $user = Auth::user();
             
-            if (!$ficheLivraison) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Fiche de livraison non trouvée'
-                ], 404);
+            // Pour admin: voir toutes les fiches
+            // Pour autres utilisateurs: voir seulement leurs fiches liées à leur stock
+            if ($user->role === 'admin') {
+                $fiches = FicheLivraison::with(['stockpv', 'livreur', 'distilleur.siteCollecte'])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+            } else {
+                $fiches = FicheLivraison::whereHas('stockpv', function($query) use ($user) {
+                        $query->where('utilisateur_id', $user->id);
+                    })
+                    ->with(['stockpv', 'livreur', 'distilleur.siteCollecte'])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
             }
-
-            // Vérifier si déjà livrée (via existence de livraison)
-            if ($ficheLivraison->livraison) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Fiche déjà livrée'
-                ], 400);
-            }
-
-            // Vérifier que le PV réception existe
-            if (!$ficheLivraison->pvReception) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'PV de réception associé non trouvé'
-                ], 404);
-            }
-
-            $pvReception = $ficheLivraison->pvReception;
-
-            // Vérifier que le statut du PV permet la livraison
-            $statutsAutorises = ['en_attente_livraison', 'partiellement_livre'];
-            if (!in_array($pvReception->statut, $statutsAutorises)) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Le PV n\'est pas en attente de livraison. Statut actuel: ' . $pvReception->statut
-                ], 422);
-            }
-
-            // Vérifier que la quantité à livrer ne dépasse pas le stock restant
-            if ($ficheLivraison->quantite_a_livrer > $pvReception->quantite_restante) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Quantité à livrer supérieure au stock disponible. Stock restant: ' . $pvReception->quantite_restante . ' kg'
-                ], 422);
-            }
-
-            // Démarrer une transaction pour assurer la cohérence des données
-            DB::beginTransaction();
-
-            try {
-                // 1. Créer l'enregistrement de livraison
-                $livraison = $ficheLivraison->livraison()->create([
-                    'date_confirmation_livraison' => now()
-                ]);
-
-                // 2. Mettre à jour la quantité restante de la fiche de livraison (0 = complètement livrée)
-                $ficheLivraison->update([
-                    'quantite_restante' => 0
-                ]);
-
-                // 3. Déduire la quantité livrée du stock du PV réception
-                $quantiteLivree = $ficheLivraison->quantite_a_livrer;
-                $nouveauStockRestant = max(0, $pvReception->quantite_restante - $quantiteLivree);
-                
-                $pvReception->update([
-                    'quantite_restante' => $nouveauStockRestant
-                ]);
-
-                // 4. Mettre à jour le statut du PV réception selon le nouveau stock
-                if ($nouveauStockRestant <= 0) {
-                    // Tout le stock a été livré
-                    $pvReception->update(['statut' => 'livree']);
-                } else {
-                    // Il reste du stock à livrer
-                    $pvReception->update(['statut' => 'partiellement_livre']);
-                }
-
-                // Valider la transaction
-                DB::commit();
-
-                // Recharger les relations pour la réponse
-                $ficheLivraison->load(['pvReception.fournisseur', 'pvReception.provenance', 'livraison']);
-                $pvReception->refresh();
-
-                // Préparer le message de succès
-                $message = 'Livraison confirmée avec succès';
-                if ($nouveauStockRestant > 0) {
-                    $message .= ' (livraison partielle - stock restant: ' . $nouveauStockRestant . ' kg)';
-                } else {
-                    $message .= ' (livraison complète)';
-                }
-
-                return response()->json([
-                    'status' => 'success',
-                    'message' => $message,
-                    'data' => [
-                        'fiche_livraison' => $ficheLivraison,
-                        'livraison' => $livraison,
-                        'pv_reception' => [
-                            'id' => $pvReception->id,
-                            'numero_doc' => $pvReception->numero_doc,
-                            'statut' => $pvReception->statut,
-                            'quantite_totale' => $pvReception->quantite_totale,
-                            'quantite_restante' => $pvReception->quantite_restante,
-                            'quantite_livree' => $pvReception->quantite_totale - $pvReception->quantite_restante,
-                            'pourcentage_livree' => $pvReception->quantite_totale > 0 ? 
-                                (($pvReception->quantite_totale - $pvReception->quantite_restante) / $pvReception->quantite_totale) * 100 : 0
-                        ]
-                    ]
-                ], 200);
-
-            } catch (\Exception $e) {
-                // Annuler la transaction en cas d'erreur
-                DB::rollBack();
-                throw $e;
-            }
-
+            
+            return response()->json([
+                'success' => true,
+                'data' => $fiches,
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'count' => $fiches->count()
+            ]);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => 'error',
-                'message' => 'Erreur lors de la confirmation de livraison: ' . $e->getMessage()
+                'success' => false,
+                'message' => 'Erreur lors de la récupération des fiches de livraison',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Erreur interne'
             ], 500);
         }
     }
 
-    // NOUVELLE MÉTHODE POUR LIVRAISON PARTIELLE AVEC QUANTITÉ SPÉCIFIQUE
-    public function livrerPartielle(Request $request, $id)
+    public function store(Request $request): JsonResponse
     {
+        DB::beginTransaction();
+        
         try {
+            $user = Auth::user();
+            
             $validator = Validator::make($request->all(), [
-                'quantite_livree' => 'required|numeric|min:0.01'
+                'stockpvs_id' => 'required|exists:stockpvs,id',
+                'livreur_id' => 'required|exists:livreurs,id',
+                'distilleur_id' => 'required|exists:utilisateurs,id',
+                'date_livraison' => 'required|date',
+                'lieu_depart' => 'required|string',
+                'ristourne_regionale' => 'nullable|numeric|min:0',
+                'ristourne_communale' => 'nullable|numeric|min:0',
+                'quantite_a_livrer' => 'required|numeric|min:0.01',
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
-                    'status' => 'error',
+                    'success' => false,
                     'message' => 'Erreur de validation',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
+                    'user_id' => $user->id
                 ], 422);
             }
 
-            $ficheLivraison = FicheLivraison::with(['pvReception'])->find($id);
-            
-            if (!$ficheLivraison) {
+            // Récupérer le distilleur avec son site de collecte
+            $distilleur = Utilisateur::with('siteCollecte')
+                ->where('id', $request->distilleur_id)
+                ->where('role', 'distilleur')
+                ->first();
+
+            if (!$distilleur) {
                 return response()->json([
-                    'status' => 'error',
-                    'message' => 'Fiche de livraison non trouvée'
+                    'success' => false,
+                    'message' => 'Distilleur non trouvé ou rôle incorrect',
+                    'user_id' => $user->id
                 ], 404);
             }
 
-            // VÉRIFIER QUE LA QUANTITÉ LIVRÉE NE DÉPASSE PAS LA QUANTITÉ PRÉVUE
-            if ($request->quantite_livree > $ficheLivraison->quantite_a_livrer) {
+            // Vérifier que le distilleur a un site de collecte
+            if (!$distilleur->site_collecte_id) {
                 return response()->json([
-                    'status' => 'error',
-                    'message' => 'Quantité livrée supérieure à la quantité prévue'
-                ], 422);
+                    'success' => false,
+                    'message' => 'Le distilleur n\'a pas de site de collecte attribué',
+                    'user_id' => $user->id
+                ], 400);
             }
 
-            // VÉRIFIER QUE LA QUANTITÉ LIVRÉE NE DÉPASSE PAS LE STOCK DISPONIBLE DU PV
-            if ($request->quantite_livree > $ficheLivraison->pvReception->quantite_restante) {
+            $stockpv = Stockpv::find($request->stockpvs_id);
+            
+            if (!$stockpv) {
                 return response()->json([
-                    'status' => 'error',
-                    'message' => 'Quantité livrée supérieure au stock disponible du PV'
-                ], 422);
+                    'success' => false,
+                    'message' => 'Stock non trouvé',
+                    'user_id' => $user->id
+                ], 404);
             }
 
-            // Démarrer une transaction
-            DB::beginTransaction();
-
-            try {
-                // 1. Créer l'enregistrement de livraison
-                $livraison = $ficheLivraison->livraison()->create([
-                    'date_confirmation_livraison' => now()
-                ]);
-
-                // 2. Mettre à jour la quantité restante de la fiche
-                $nouvelleQuantiteRestanteFiche = max(0, $ficheLivraison->quantite_a_livrer - $request->quantite_livree);
-                $ficheLivraison->update([
-                    'quantite_restante' => $nouvelleQuantiteRestanteFiche
-                ]);
-
-                // 3. Déduire la quantité livrée du stock du PV
-                $pvReception = $ficheLivraison->pvReception;
-                $nouveauStockRestant = max(0, $pvReception->quantite_restante - $request->quantite_livree);
-                $pvReception->update([
-                    'quantite_restante' => $nouveauStockRestant
-                ]);
-
-                // 4. Mettre à jour le statut du PV selon le nouveau stock
-                if ($nouveauStockRestant <= 0) {
-                    $pvReception->update(['statut' => 'livree']);
-                } else {
-                    $pvReception->update(['statut' => 'partiellement_livre']);
-                }
-
-                DB::commit();
-
-                // Recharger les relations
-                $ficheLivraison->load(['pvReception.fournisseur', 'pvReception.provenance', 'livraison']);
-
+            // VÉRIFICATION 1: Vérifier que le stock appartient à l'utilisateur (sauf admin)
+            if ($user->role !== 'admin' && $stockpv->utilisateur_id != $user->id) {
                 return response()->json([
-                    'status' => 'success',
-                    'message' => 'Livraison partielle confirmée avec succès',
-                    'data' => [
-                        'fiche_livraison' => $ficheLivraison,
-                        'livraison' => $livraison,
-                        'quantite_livree' => $request->quantite_livree,
-                        'statut_pv' => $pvReception->statut,
-                        'quantite_restante_pv' => $pvReception->quantite_restante,
-                        'quantite_restante_fiche' => $ficheLivraison->quantite_restante
-                    ]
-                ], 200);
-
-            } catch (\Exception $e) {
-                DB::rollBack();
-                throw $e;
+                    'success' => false,
+                    'message' => 'Accès non autorisé à ce stock. Ce stock appartient à un autre utilisateur',
+                    'user_id' => $user->id,
+                    'stock_user_id' => $stockpv->utilisateur_id,
+                    'current_user_id' => $user->id
+                ], 403);
             }
+
+            // VÉRIFICATION 2: Vérifier si le stock est vide
+            if ($stockpv->stock_disponible <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Stock vide. Impossible de créer une fiche de livraison',
+                    'stock_disponible' => $stockpv->stock_disponible,
+                    'user_id' => $user->id,
+                    'stock_id' => $stockpv->id
+                ], 400);
+            }
+
+            // VÉRIFICATION 3: Vérifier le stock disponible
+            if ($stockpv->stock_disponible < $request->quantite_a_livrer) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Stock insuffisant. Disponible: ' . number_format($stockpv->stock_disponible, 2) . ' kg - Demandé: ' . number_format($request->quantite_a_livrer, 2) . ' kg',
+                    'stock_disponible' => $stockpv->stock_disponible,
+                    'quantite_demandee' => $request->quantite_a_livrer,
+                    'user_id' => $user->id,
+                    'difference' => $request->quantite_a_livrer - $stockpv->stock_disponible
+                ], 400);
+            }
+
+            // Soustraire du stock disponible DE L'UTILISATEUR
+            $stockAvant = $stockpv->stock_disponible;
+            $stockpv->decrement('stock_disponible', $request->quantite_a_livrer);
+            $stockApres = $stockpv->stock_disponible;
+            
+            // Mettre à jour le stock global aussi si nécessaire
+            $this->mettreAJourStockGlobal($stockpv, $request->quantite_a_livrer);
+
+            // Créer la fiche de livraison
+            $fiche = FicheLivraison::create([
+                'stockpvs_id' => $request->stockpvs_id,
+                'livreur_id' => $request->livreur_id,
+                'distilleur_id' => $distilleur->id,
+                'date_livraison' => $request->date_livraison,
+                'lieu_depart' => $request->lieu_depart,
+                'ristourne_regionale' => $request->ristourne_regionale ?? 0,
+                'ristourne_communale' => $request->ristourne_communale ?? 0,
+                'quantite_a_livrer' => $request->quantite_a_livrer,
+                'created_by' => $user->id,
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Fiche de livraison créée avec succès',
+                'data' => $fiche->load(['stockpv', 'livreur', 'distilleur.siteCollecte']),
+                'stock_info' => [
+                    'stock_id' => $stockpv->id,
+                    'stock_avant' => $stockAvant,
+                    'stock_apres' => $stockApres,
+                    'quantite_soustraction' => $request->quantite_a_livrer,
+                    'utilisateur_id' => $stockpv->utilisateur_id,
+                    'type_matiere' => $stockpv->type_matiere,
+                    'niveau_stock' => $stockpv->niveau_stock
+                ],
+                'destinataire' => [
+                    'distilleur_id' => $distilleur->id,
+                    'nom_complet' => $distilleur->nom . ' ' . $distilleur->prenom,
+                    'site_collecte' => $distilleur->siteCollecte->Nom ?? 'Non défini',
+                    'site_collecte_id' => $distilleur->site_collecte_id
+                ],
+                'user_info' => [
+                    'id' => $user->id,
+                    'nom' => $user->nom,
+                    'prenom' => $user->prenom,
+                    'role' => $user->role
+                ]
+            ], 201);
 
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
-                'status' => 'error',
-                'message' => 'Erreur lors de la livraison partielle: ' . $e->getMessage()
+                'success' => false,
+                'message' => 'Erreur lors de la création de la fiche de livraison',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Erreur interne',
+                'user_id' => isset($user) ? $user->id : null
             ], 500);
         }
     }
 
-    // GET /fiche-livraisons (liste, avec filtres optionnels)
-   public function index(Request $request)
-{
-    try {
-        $query = FicheLivraison::with([
-            'pvReception.fournisseur', 
-            'livreur',
-            'destinateur',
-            'livraison'
-        ])->orderBy('created_at', 'desc');
+    public function show($id): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            
+            $fiche = FicheLivraison::with(['stockpv', 'livreur', 'distilleur.siteCollecte'])
+                ->find($id);
+            
+            if (!$fiche) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Fiche de livraison non trouvée',
+                    'user_id' => $user->id
+                ], 404);
+            }
 
-        if ($request->pv_reception_id) {
-            $query->where('pv_reception_id', $request->pv_reception_id);
-        }
+            // Vérifier que l'utilisateur a accès à cette fiche (sauf admin)
+            if ($user->role !== 'admin') {
+                if (!$fiche->stockpv || $fiche->stockpv->utilisateur_id != $user->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Accès non autorisé à cette fiche de livraison',
+                        'user_id' => $user->id,
+                        'fiche_user_id' => $fiche->stockpv ? $fiche->stockpv->utilisateur_id : null
+                    ], 403);
+                }
+            }
 
-        $ficheLivraisons = $query->get();
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $ficheLivraisons
-        ], 200);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Erreur lors de la récupération des fiches de livraison'
-        ], 500);
-    }
-}
-
-    // GET /fiche-livraisons/{id}
-   public function show($id)
-{
-    try {
-        $ficheLivraison = FicheLivraison::with([
-            'pvReception.fournisseur', 
-            'livreur',
-            'destinateur',
-            'livraison'
-        ])->find($id);
-
-        if (!$ficheLivraison) {
             return response()->json([
-                'status' => 'error',
-                'message' => 'Fiche de livraison non trouvée'
-            ], 404);
+                'success' => true,
+                'data' => $fiche,
+                'user_id' => $user->id,
+                'role' => $user->role
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération de la fiche de livraison',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Erreur interne',
+                'user_id' => isset($user) ? $user->id : null
+            ], 500);
         }
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $ficheLivraison
-        ], 200);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Erreur lors de la récupération de la fiche de livraison'
-        ], 500);
     }
-}
+
+    // Méthode pour récupérer les fiches par site de collecte
+    public function getBySiteCollecte($siteCollecteNom): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            
+            // Pour admin: voir toutes les fiches de ce site
+            // Pour autres: voir seulement leurs fiches de ce site
+            if ($user->role === 'admin') {
+                $fiches = FicheLivraison::whereHas('distilleur.siteCollecte', function($query) use ($siteCollecteNom) {
+                        $query->where('Nom', $siteCollecteNom);
+                    })
+                    ->with(['stockpv', 'livreur', 'distilleur.siteCollecte'])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+            } else {
+                $fiches = FicheLivraison::whereHas('distilleur.siteCollecte', function($query) use ($siteCollecteNom) {
+                        $query->where('Nom', $siteCollecteNom);
+                    })
+                    ->whereHas('stockpv', function($query) use ($user) {
+                        $query->where('utilisateur_id', $user->id);
+                    })
+                    ->with(['stockpv', 'livreur', 'distilleur.siteCollecte'])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => $fiches,
+                'site_collecte' => $siteCollecteNom,
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'count' => $fiches->count()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération des fiches par site',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Erreur interne',
+                'user_id' => isset($user) ? $user->id : null
+            ], 500);
+        }
+    }
+
+    // Méthode pour récupérer les distillateurs disponibles
+    public function getDistillateurs(): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            
+            $distillateurs = Utilisateur::where('role', 'distilleur')
+                ->with('siteCollecte')
+                ->get()
+                ->map(function ($distilleur) {
+                    return [
+                        'id' => $distilleur->id,
+                        'nom_complet' => $distilleur->nom . ' ' . $distilleur->prenom,
+                        'site_collecte' => $distilleur->siteCollecte->Nom ?? 'Non attribué',
+                        'site_collecte_id' => $distilleur->site_collecte_id,
+                        'numero' => $distilleur->numero,
+                        'localisation_id' => $distilleur->localisation_id
+                    ];
+                });
+            
+            return response()->json([
+                'success' => true,
+                'data' => $distillateurs,
+                'user_id' => $user->id,
+                'count' => $distillateurs->count()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération des distillateurs',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Erreur interne',
+                'user_id' => isset($user) ? $user->id : null
+            ], 500);
+        }
+    }
+
+    // Nouvelle méthode pour obtenir les stocks disponibles par utilisateur
+    public function getStocksDisponiblesUtilisateur(): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Utilisateur non connecté'
+                ], 401);
+            }
+
+            // Pour admin: voir tous les stocks des utilisateurs
+            // Pour autres: voir seulement leur stock
+            if ($user->role === 'admin') {
+                $stocks = Stockpv::where('stock_disponible', '>', 0)
+                    ->where('niveau_stock', 'utilisateur')
+                    ->with(['utilisateur'])
+                    ->get()
+                    ->groupBy('type_matiere');
+            } else {
+                $stocks = Stockpv::where('utilisateur_id', $user->id)
+                    ->where('stock_disponible', '>', 0)
+                    ->where('niveau_stock', 'utilisateur')
+                    ->get()
+                    ->groupBy('type_matiere');
+            }
+
+            $result = [];
+            foreach (['FG', 'CG', 'GG'] as $type) {
+                $stocksType = $stocks->get($type, collect());
+                
+                $result[$type] = [
+                    'stocks_disponibles' => $stocksType->map(function($stock) use ($user) {
+                        return [
+                            'id' => $stock->id,
+                            'type_matiere' => $stock->type_matiere,
+                            'stock_disponible' => (float) $stock->stock_disponible,
+                            'stock_total' => (float) $stock->stock_total,
+                            'utilisateur_id' => $stock->utilisateur_id,
+                            'utilisateur_nom' => $user->role === 'admin' && $stock->utilisateur ? 
+                                $stock->utilisateur->nom . ' ' . $stock->utilisateur->prenom : 
+                                'Votre stock',
+                            'niveau_stock' => $stock->niveau_stock,
+                            'peut_livrer' => $stock->stock_disponible > 0
+                        ];
+                    }),
+                    'total_disponible' => $stocksType->sum('stock_disponible'),
+                    'nombre_stocks' => $stocksType->count(),
+                    'peut_creer_fiche' => $stocksType->sum('stock_disponible') > 0
+                ];
+            }
+
+            // Vérifier si l'utilisateur a du stock
+            $aDuStock = collect($result)->some(function($type) {
+                return $type['total_disponible'] > 0;
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $result,
+                'user' => [
+                    'id' => $user->id,
+                    'role' => $user->role,
+                    'a_du_stock' => $aDuStock,
+                    'message' => $aDuStock ? 
+                        'Vous avez du stock disponible pour créer des fiches de livraison' : 
+                        'Vous n\'avez pas de stock disponible'
+                ],
+                'summary' => [
+                    'total_types_avec_stock' => collect($result)->filter(fn($type) => $type['total_disponible'] > 0)->count(),
+                    'stock_total_disponible' => collect($result)->sum('total_disponible')
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération des stocks',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'Erreur interne'
+            ], 500);
+        }
+    }
+
+    // Méthode privée pour mettre à jour le stock global
+    private function mettreAJourStockGlobal(Stockpv $stockPersonnel, $quantite): void
+    {
+        try {
+            // Si c'est un stock personnel, mettre à jour aussi le stock global
+            if ($stockPersonnel->utilisateur_id && $stockPersonnel->niveau_stock === 'utilisateur') {
+                // Trouver le stock global correspondant
+                $stockGlobal = Stockpv::where('type_matiere', $stockPersonnel->type_matiere)
+                    ->whereNull('utilisateur_id')
+                    ->where('niveau_stock', 'global')
+                    ->first();
+                    
+                if ($stockGlobal) {
+                    $avantGlobal = $stockGlobal->stock_disponible;
+                    $stockGlobal->decrement('stock_disponible', $quantite);
+                    $apresGlobal = $stockGlobal->stock_disponible;
+                    
+                    \Log::info("Stock global mis à jour: {$stockPersonnel->type_matiere} -{$quantite}kg (Avant: {$avantGlobal}kg, Après: {$apresGlobal}kg)");
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::error("Erreur mise à jour stock global: " . $e->getMessage());
+        }
+    }
 }

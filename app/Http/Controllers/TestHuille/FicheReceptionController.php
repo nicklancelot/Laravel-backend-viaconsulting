@@ -39,7 +39,8 @@ class FicheReceptionController extends Controller
         }
     }
 
-   public function store(Request $request)
+// Dans FicheReceptionController.php - Modifier la méthode store()
+public function store(Request $request)
 {
     try {
         DB::beginTransaction();
@@ -63,7 +64,7 @@ class FicheReceptionController extends Controller
             'prix_total' => 'nullable|numeric|min:0'
         ]);
 
-        // VÉRIFICATION PAIEMENT EN AVANCE
+        // Vérification paiement en attente...
         $paiementEnAttente = PayementAvance::where('fournisseur_id', $validated['fournisseur_id'])
             ->where('statut', 'en_attente')
             ->exists();
@@ -83,27 +84,26 @@ class FicheReceptionController extends Controller
         }
 
         $numeroDocument = 'REC-' . date('Ymd') . '-' . Str::upper(Str::random(6));
-
-        // CALCUL DU POIDS NET
+        
+        // Calculer le poids net
         $poidsNet = $this->calculerPoidsNet($request);
         $poidsAgreer = $validated['poids_agreer'] ?? $poidsNet;
 
-        // CALCUL DU PRIX TOTAL INITIAL
+        // Calculer le prix total initial
         $prixTotalInitial = $validated['prix_total'] ?? null;
         if (empty($prixTotalInitial) && !empty($validated['prix_unitaire'])) {
             $prixTotalInitial = $poidsNet * $validated['prix_unitaire'];
         }
 
-        // LOGIQUE D'UTILISATION DES PAIEMENTS D'AVANCE
+        // Gestion des paiements en avance...
         $paiementsUtilises = [];
         $totalPaiementsUtilises = 0;
-        $prixTotalFinal = $prixTotalInitial ?? 0; // Initialiser le prix total final
+        $prixTotalFinal = $prixTotalInitial ?? 0;
         
-        // Le statut reste toujours "en attente de teste" quel que soit le paiement
+        // Initialiser le statut
         $statutFiche = 'en attente de teste';
 
         if ($prixTotalInitial > 0) {
-            // Récupérer UN SEUL paiement disponible (le premier arrivé)
             $paiementDisponible = PayementAvance::where('fournisseur_id', $validated['fournisseur_id'])
                 ->where('statut', 'arrivé')
                 ->where('montant_restant', '>', 0)
@@ -111,7 +111,6 @@ class FicheReceptionController extends Controller
                 ->first();
 
             if ($paiementDisponible) {
-                // Calculer combien utiliser de ce paiement
                 $montantDisponiblePaiement = $paiementDisponible->montant_restant;
                 $montantAUtiliser = min($montantDisponiblePaiement, $prixTotalInitial);
                 
@@ -123,7 +122,7 @@ class FicheReceptionController extends Controller
                     $paiementDisponible->update([
                         'montant_utilise' => $nouveauMontantUtilise,
                         'montant_restant' => $nouveauMontantRestant,
-                        'fiche_reception_id' => null, // On mettra à jour après création de la fiche
+                        'fiche_reception_id' => null,
                         'date_utilisation' => now(),
                         'statut' => $nouveauStatutPaiement
                     ]);
@@ -135,14 +134,17 @@ class FicheReceptionController extends Controller
                     ];
                     
                     $totalPaiementsUtilises = $montantAUtiliser;
-                    
-                    // IMPORTANT : Calculer le prix total final après déduction du paiement
                     $prixTotalFinal = max(0, $prixTotalInitial - $montantAUtiliser);
+                    
+                    // Si le paiement en avance couvre tout le montant, la fiche est payée
+                    if ($prixTotalFinal == 0) {
+                        $statutFiche = 'payé';
+                    }
                 }
             }
         }
 
-        // Créer la fiche de réception avec le prix total ajusté
+        // CRÉATION DE LA FICHE AVEC LES QUANTITÉS INITIALES
         $fiche = FicheReception::create([
             'numero_document' => $numeroDocument,
             'date_reception' => $validated['date_reception'],
@@ -155,25 +157,31 @@ class FicheReceptionController extends Controller
             'taux_humidite' => $validated['taux_humidite'] ?? null,
             'taux_dessiccation' => $validated['taux_dessiccation'] ?? null,
             'poids_net' => $poidsNet,
+            'quantite_totale' => $poidsNet, 
+            'quantite_restante' => $poidsNet, 
             'type_emballage' => $validated['type_emballage'] ?? null,
             'poids_emballage' => $validated['poids_emballage'] ?? null,
             'nombre_colisage' => $validated['nombre_colisage'] ?? null,
             'prix_unitaire' => $validated['prix_unitaire'] ?? null,
-            'prix_total' => $prixTotalFinal, // Prix total ajusté selon paiement utilisé
-            'statut' => $statutFiche // Toujours "en attente de teste"
+            'prix_total' => $prixTotalFinal,
+            'statut' => $statutFiche
         ]);
 
-        // Maintenant mettre à jour les paiements avec l'ID de la fiche créée
+        // Mettre à jour les paiements avec l'ID de la fiche
         foreach ($paiementsUtilises as $item) {
             $paiement = $item['paiement'];
             $paiement->update(['fiche_reception_id' => $fiche->id]);
         }
 
+        // ✅ CONDITION : Si le statut est "payé", stocker dans Stockhe
+if ($statutFiche === 'payé') {
+    \App\Models\TestHuille\Stockhe::ajouterStock($fiche->poids_net, $fiche->utilisateur_id);
+}
         DB::commit();
 
         $fiche->load(['fournisseur', 'siteCollecte', 'utilisateur']);
 
-        // Préparer le message de réponse
+        // Message de confirmation...
         $messagePaiements = '';
         $resteAPayer = $prixTotalFinal;
         
@@ -197,10 +205,14 @@ class FicheReceptionController extends Controller
             'data' => $fiche,
             'calculs' => [
                 'poids_net_calcule' => $poidsNet,
-                'prix_total_initial' => $prixTotalInitial, // Prix total avant paiement
-                'prix_total_final' => $prixTotalFinal, // Prix total après paiement
+                'quantite_totale' => $poidsNet,
+                'quantite_restante' => $poidsNet,
+                'prix_total_initial' => $prixTotalInitial,
+                'prix_total_final' => $prixTotalFinal,
                 'paiement_avance_utilise' => $totalPaiementsUtilises,
                 'reste_a_payer' => $prixTotalFinal,
+                'statut_final' => $statutFiche,
+                'stock_ajoute' => $statutFiche === 'payé',
                 'details_paiement' => !empty($paiementsUtilises) ? [
                     'id' => $paiementsUtilises[0]['paiement']->id,
                     'reference' => $paiementsUtilises[0]['paiement']->reference,
@@ -232,7 +244,6 @@ class FicheReceptionController extends Controller
         ], 500);
     }
 }
-
     public function show($id)
     {
         try {
@@ -307,18 +318,18 @@ class FicheReceptionController extends Controller
                 'statut' => 'sometimes|in:en attente de teste,en cours de teste,Accepté,teste validé,teste invalide,En attente de livraison,payé,incomplet,partiellement payé,en attente de paiement,livré,Refusé,A retraiter'
             ]);
 
-            // RECALCUL DU POIDS NET SI NÉCESSAIRE
+         
             if ($request->hasAny(['poids_brut', 'poids_emballage', 'taux_humidite', 'taux_dessiccation'])) {
                 $poidsNet = $this->calculerPoidsNet($request);
                 $validated['poids_net'] = $poidsNet;
                 
-                // Si poids_agreer n'est pas fourni, le mettre à jour avec le nouveau poids_net
+              
                 if (!$request->has('poids_agreer')) {
                     $validated['poids_agreer'] = $poidsNet;
                 }
             }
 
-            // RECALCUL DU PRIX TOTAL SI PRIX_UNITAIRE EST MODIFIÉ
+          
             if ($request->has('prix_unitaire') && !empty($request->prix_unitaire)) {
                 $poidsNet = $validated['poids_net'] ?? $fiche->poids_net;
                 $validated['prix_total'] = $poidsNet * $request->prix_unitaire;
@@ -473,9 +484,9 @@ public function getInfosFournisseur($fournisseur_id)
                         return [
                             'id' => $paiement->id,
                             'reference' => $paiement->reference,
-                            'montant' => $paiement->montant, // Montant total
-                            'montant_utilise' => $paiement->montant_utilise, // Montant déjà utilisé
-                            'montant_restant' => $paiement->montant_restant, // Montant encore disponible
+                            'montant' => $paiement->montant, 
+                            'montant_utilise' => $paiement->montant_utilise, 
+                            'montant_restant' => $paiement->montant_restant,
                             'type' => $paiement->type,
                             'date' => $paiement->date,
                             'description' => $paiement->description,

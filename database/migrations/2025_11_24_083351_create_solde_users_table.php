@@ -6,9 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+   
     public function up(): void
     {
         Schema::create('solde_users', function (Blueprint $table) {
@@ -16,7 +14,7 @@ return new class extends Migration
             $table->foreignId('utilisateur_id')->constrained()->onDelete('cascade');
             $table->decimal('solde', 15, 2)->default(0);
             $table->timestamps();
-            $table->unique('utilisateur_id'); 
+            $table->unique('utilisateur_id');
         });
     }
 

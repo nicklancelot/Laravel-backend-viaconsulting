@@ -19,11 +19,13 @@ return new class extends Migration
             $table->string('CIN', 20);
             $table->string('password');
             $table->enum('role', ['admin', 'collecteur', 'vendeur', 'distilleur'])->default('collecteur');
+            $table->foreignId('site_collecte_id')->nullable()->constrained('site_collectes')->onDelete('set null'); 
+            $table->string('code_collecteur')->nullable(); 
             $table->rememberToken();
             $table->timestamps();
         });
 
-        
+    
         DB::table('utilisateurs')->insert([
             'nom' => 'Admin',
             'prenom' => 'Système',
@@ -32,6 +34,8 @@ return new class extends Migration
             'CIN' => '51201100394',
             'password' => Hash::make('admin123'),
             'role' => 'admin',
+            'site_collecte_id' => null,
+            'code_collecteur' => null,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

@@ -20,6 +20,8 @@ return new class extends Migration
             $table->foreignId('admin_id')->nullable()->constrained('utilisateurs')->onDelete('set null');
             $table->text('commentaire_admin')->nullable();
             $table->timestamp('date')->nullable();
+            $table->boolean('lu_par_utilisateur')->default(false);
+            $table->boolean('lu_par_admin')->default(false);
             $table->timestamps();
         });
     }

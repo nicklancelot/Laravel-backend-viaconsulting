@@ -214,4 +214,10 @@ public function calculerPoidsNet(): float
         return (($this->quantite_totale - $this->quantite_restante) / $this->quantite_totale) * 100;
     }
 
+public function expedition()
+{
+    // Spécifier explicitement la clé étrangère
+    return $this->hasOne(\App\Models\Distillation\Expedition::class, 'pv_reception_id');
+}
+
 }

@@ -55,6 +55,23 @@ class FournisseurController extends Controller
             $data = $request->all();
             $data['utilisateur_id'] = $user->id;
 
+            // Générer automatiquement l'identification_fiscale si non fournie
+            if (empty($data['identification_fiscale']) && $user->code_collecteur) {
+                // Compter le nombre de fournisseurs créés par cet utilisateur
+                $countFournisseurs = Fournisseur::where('utilisateur_id', $user->id)->count();
+                $numeroSequence = str_pad($countFournisseurs + 1, 3, '0', STR_PAD_LEFT);
+                
+                // Créer l'identification fiscale basée sur le code du collecteur
+                $data['identification_fiscale'] = $user->code_collecteur . '-F' . $numeroSequence;
+                
+                // Vérifier si cette identification fiscale existe déjà (cas rare)
+                while (Fournisseur::where('identification_fiscale', $data['identification_fiscale'])->exists()) {
+                    $countFournisseurs++;
+                    $numeroSequence = str_pad($countFournisseurs + 1, 3, '0', STR_PAD_LEFT);
+                    $data['identification_fiscale'] = $user->code_collecteur . '-F' . $numeroSequence;
+                }
+            }
+
             $fournisseur = Fournisseur::create($data);
 
             return response()->json([
